@@ -3,66 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>高校席替えアプリ</title>
+    <title>席替えくん</title>
     
-    <!-- Tailwind CSS (デザイン用) -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Lucide Icons (アイコン用) -->
+    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     
-    <!-- html2canvas & jsPDF (保存用) -->
+    <!-- html2canvas & jsPDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <style>
-        /* 3Dカード回転エフェクト用 */
         .perspective-1000 { perspective: 1000px; }
         .transform-style-3d { transform-style: preserve-3d; }
         .backface-hidden { backface-visibility: hidden; }
         .rotate-y-180 { transform: rotateY(180deg); }
-        
-        /* スクロールバー非表示 (見た目スッキリ用) */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
-        /* 文字省略 */
-        .line-clamp-2 {
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
-
-        /* 印刷設定 */
         @media print {
             @page { size: landscape; margin: 5mm; }
             .print\:hidden { display: none !important; }
-            .print\:block { display: block !important; }
-            .print\:bg-white { background-color: white !important; }
-            .print\:text-black { color: black !important; }
-            .print\:shadow-none { box-shadow: none !important; }
-            .print\:ring-0 { box-shadow: none !important; }
             body { -webkit-print-color-adjust: exact; }
         }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans h-screen overflow-hidden flex flex-col">
 
-    <!-- アプリのルート要素 -->
-    <div id="app" class="h-full w-full flex flex-col md:flex-row overflow-hidden">
-        <!-- ここにJSでコンテンツを描画します -->
-    </div>
+    <div id="app" class="h-full w-full flex flex-col overflow-hidden"></div>
 
-    <!-- モーダル (初期状態は非表示) -->
     <div id="modal-overlay" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 hidden" onclick="closeModal()">
-        <div id="modal-content" class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]" onclick="event.stopPropagation()">
-            <!-- モーダルの中身はJSで動的に書き換えます -->
-        </div>
+        <div id="modal-content" class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]" onclick="event.stopPropagation()"></div>
     </div>
 
     <script>
-        // --- 初期データ ---
+        const state = {
+            mode: 'teacher', 
+            students: [],
+            rows: 8,
+            cols: 6,
+            seats: [], 
+            lockedSeats: {}, 
+            seatAttributes: {}, 
+            importText: INITIAL_STUDENTS_TEXT || '',
+            importUrl: '',
+            revealState: {},
+            blackboardPosition: 'top',
+            isShuffling: false,
+            activeTool: 'CURSOR', 
+            swapSourceIndex: null, 
+            editingSeatIndex: null,
+            searchQuery: '',
+            showSaveMenu: false,
+            isRosterOpen: true, 
+            isSoundEnabled: true,
+            isStudentControlsVisible: true,
+            isSidebarCollapsed: false 
+        };
+
         const INITIAL_STUDENTS_TEXT = `1, 佐藤 健, 男
 2, 鈴木 愛, 女
 3, 高橋 翔, 男
@@ -112,137 +113,52 @@
 47, 森本 悠真, 男
 48, 今井 桜, 女`;
 
-        // --- 状態管理 (ReactのState相当) ---
-        const state = {
-            mode: 'teacher', // 'teacher' | 'student'
-            students: [],
-            rows: 8,
-            cols: 6,
-            seats: [], // index -> studentId
-            lockedSeats: {}, // index -> boolean
-            seatAttributes: {}, // index -> 'M' | 'F' | 'EMPTY' | null
-            importText: INITIAL_STUDENTS_TEXT,
-            importUrl: '',
-            revealState: {},
-            blackboardPosition: 'top',
-            isShuffling: false,
-            activeTool: 'CURSOR', // 'CURSOR', 'EMPTY', 'M', 'F', 'SWAP'
-            swapSourceIndex: null, // 入れ替え元のインデックス
-            editingSeatIndex: null,
-            searchQuery: '',
-            showSaveMenu: false,
-            importError: '',
-            isRosterOpen: true, // デフォルトで開く
-            isSoundEnabled: true,
-            isStudentControlsVisible: true, // 生徒モードのコントロール表示状態
-            isSidebarCollapsed: false // 教員モードのサイドバー折りたたみ状態
-        };
-
-        // --- Web Audio API (音生成) ---
         let audioCtx = null;
-
         function initAudio() {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            if (AudioContext && !audioCtx) {
-                audioCtx = new AudioContext();
-            }
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC && !audioCtx) audioCtx = new AC();
         }
-
         function playTone(freq, type, duration, startTime = 0, vol = 0.1) {
             if (!audioCtx || !state.isSoundEnabled) return;
             if (audioCtx.state === 'suspended') audioCtx.resume();
-
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
-            
             osc.type = type;
             osc.frequency.setValueAtTime(freq, audioCtx.currentTime + startTime);
-            
             gain.gain.setValueAtTime(0, audioCtx.currentTime + startTime);
             gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + startTime + 0.01);
             gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
-
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            
-            osc.start(audioCtx.currentTime + startTime);
-            osc.stop(audioCtx.currentTime + startTime + duration);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime + startTime); osc.stop(audioCtx.currentTime + startTime + duration);
         }
-
-        function playFlip() {
-            initAudio();
-            const freq = 1000 + Math.random() * 200; 
-            playTone(freq, 'sine', 0.1, 0, 0.08);
-        }
-
-        function playDrumroll() {
-            initAudio();
-            if (!audioCtx || !state.isSoundEnabled) return;
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            const count = 12;
-            for (let i = 0; i < count; i++) {
-                playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15);
-            }
-        }
-
-        function playTada() {
-            initAudio();
-            if (!audioCtx || !state.isSoundEnabled) return;
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            const notes = [523.25, 659.25, 783.99, 987.77, 1174.66]; 
-            notes.forEach((freq, i) => {
-                playTone(freq, 'triangle', 1.8, i * 0.06, 0.15);
-                playTone(freq * 2, 'sine', 1.2, i * 0.06, 0.05);
-            });
-        }
-
-        // --- ロジック関数 ---
+        function playFlip() { initAudio(); playTone(1000 + Math.random() * 200, 'sine', 0.1, 0, 0.08); }
+        function playDrumroll() { initAudio(); if (!audioCtx || !state.isSoundEnabled) return; for (let i = 0; i < 12; i++) { playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15); } }
+        function playTada() { initAudio(); if (!audioCtx || !state.isSoundEnabled) return; [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((freq, i) => { playTone(freq, 'triangle', 1.8, i * 0.06, 0.15); }); }
 
         function parseStudents(text) {
             const lines = text.trim().split('\n');
             state.students = lines.map((line, i) => {
                 const parts = line.split(/[,\t]/).map(p => p.trim()).filter(p => p);
-                let number = i + 1;
-                let name = `生徒${i+1}`;
-                let gender = 'M';
-
+                let num = i + 1, name = `生徒${i+1}`, gender = 'M';
                 if (parts.length >= 3) {
-                    if (!isNaN(parseInt(parts[0]))) {
-                        number = parseInt(parts[0]);
-                        name = parts[1];
-                        gender = (parts[2].includes('女') || parts[2].toLowerCase().includes('f')) ? 'F' : 'M';
-                    } else {
-                        name = parts[0];
-                        gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M';
-                    }
+                    if (!isNaN(parseInt(parts[0]))) { num = parseInt(parts[0]); name = parts[1]; gender = (parts[2].includes('女') || parts[2].toLowerCase().includes('f')) ? 'F' : 'M'; }
+                    else { name = parts[0]; gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M'; }
                 } else if (parts.length === 2) {
-                    if (!isNaN(parseInt(parts[0]))) {
-                        number = parseInt(parts[0]);
-                        name = parts[1];
-                    } else {
-                        name = parts[0];
-                        gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M';
-                    }
-                } else if (parts.length === 1) {
-                    name = parts[0];
-                }
-                return { id: `s-${i}`, number, name, gender };
+                    if (!isNaN(parseInt(parts[0]))) { num = parseInt(parts[0]); name = parts[1]; }
+                    else { name = parts[0]; gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M'; }
+                } else if (parts.length === 1) { name = parts[0]; }
+                return { id: `s-${i}`, number: num, name, gender };
             });
         }
 
         function initSeats() {
             const newSize = state.rows * state.cols;
             const newSeats = new Array(newSize).fill(null);
-            for (let i = 0; i < Math.min(state.seats.length, newSize); i++) {
-                newSeats[i] = state.seats[i];
-            }
+            for (let i = 0; i < Math.min(state.seats.length, newSize); i++) { newSeats[i] = state.seats[i]; }
             state.seats = newSeats;
-
             const resizeObj = (prev) => {
                 const next = {};
-                Object.keys(prev).forEach(key => {
-                    if (parseInt(key) < newSize) next[key] = prev[key];
-                });
+                Object.keys(prev).forEach(key => { if (parseInt(key) < newSize) next[key] = prev[key]; });
                 return next;
             };
             state.lockedSeats = resizeObj(state.lockedSeats);
@@ -250,733 +166,308 @@
             render();
         }
 
-        async function handleUrlImport() {
-            state.importError = '';
-            if (!state.importUrl) return;
-            let csvUrl = state.importUrl;
-            const match = state.importUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-            if (match && match[1]) {
-                csvUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv`;
-            } else {
-                state.importError = '有効なGoogleスプレッドシートのURLではありません。';
-                render();
-                return;
-            }
-            try {
-                const response = await fetch(csvUrl);
-                if (!response.ok) throw new Error('アクセスできませんでした。');
-                const text = await response.text();
-                state.importText = text;
-                parseStudents(text);
-                state.importUrl = '';
-                // 名簿更新後は閉じない（確認のため）
-                initSeats(); 
-            } catch (e) {
-                console.error(e);
-                state.importError = '読み込みに失敗しました。「リンクを知っている全員」に公開してください。';
-                render();
-            }
-        }
-
         function shuffleSeatsLogic() {
             let newSeats = [...state.seats];
-            const attributeIndices = { M: [], F: [], EMPTY: [], NONE: [] };
-            const lockedStudentIds = new Set();
-
-            for (let i = 0; i < newSeats.length; i++) {
-                if (state.lockedSeats[i] && newSeats[i]) {
-                    lockedStudentIds.add(newSeats[i]);
-                } else {
-                    newSeats[i] = null;
-                    const attr = state.seatAttributes[i];
-                    if (attr === 'EMPTY') attributeIndices.EMPTY.push(i);
-                    else if (attr === 'M') attributeIndices.M.push(i);
-                    else if (attr === 'F') attributeIndices.F.push(i);
-                    else attributeIndices.NONE.push(i);
-                }
-            }
-
-            let pool = state.students.filter(s => !lockedStudentIds.has(s.id));
+            const lockedIds = new Set();
+            for (let i = 0; i < newSeats.length; i++) { if (state.lockedSeats[i] && newSeats[i]) lockedIds.add(newSeats[i]); else newSeats[i] = null; }
+            let pool = state.students.filter(s => !lockedIds.has(s.id));
             let boys = pool.filter(s => s.gender === 'M').sort(() => Math.random() - 0.5);
             let girls = pool.filter(s => s.gender === 'F').sort(() => Math.random() - 0.5);
-
-            attributeIndices.M.forEach(idx => { if (boys.length > 0) newSeats[idx] = boys.pop().id; });
-            attributeIndices.F.forEach(idx => { if (girls.length > 0) newSeats[idx] = girls.pop().id; });
-            
+            for (let i = 0; i < newSeats.length; i++) {
+                if (state.lockedSeats[i]) continue;
+                const attr = state.seatAttributes[i];
+                if (attr === 'M' && boys.length > 0) newSeats[i] = boys.pop().id;
+                else if (attr === 'F' && girls.length > 0) newSeats[i] = girls.pop().id;
+            }
             let remaining = [...boys, ...girls].sort(() => Math.random() - 0.5);
-            attributeIndices.NONE.forEach(idx => { if (remaining.length > 0) newSeats[idx] = remaining.pop().id; });
-
-            state.seats = newSeats;
-            state.revealState = {};
-            render();
+            for (let i = 0; i < newSeats.length; i++) {
+                if (!newSeats[i] && state.seatAttributes[i] !== 'EMPTY' && remaining.length > 0) newSeats[i] = remaining.pop().id;
+            }
+            state.seats = newSeats; state.revealState = {}; render();
         }
 
         function shuffleSeatsWithAnimation() {
-            state.isShuffling = true;
-            playDrumroll();
-            render();
-            setTimeout(() => {
-                shuffleSeatsLogic();
-                state.isShuffling = false;
-                playTada();
-                render();
-            }, 1500);
+            state.isShuffling = true; playDrumroll(); render();
+            setTimeout(() => { shuffleSeatsLogic(); state.isShuffling = false; playTada(); render(); }, 1500);
         }
 
-        function getStudent(id) {
-            return state.students.find(s => s.id === id);
-        }
-
-        // --- イベントハンドラ (グローバル公開) ---
-
-        window.setMode = (mode) => { state.mode = mode; render(); };
+        window.setMode = (m) => { state.mode = m; render(); };
         window.toggleSound = () => { state.isSoundEnabled = !state.isSoundEnabled; render(); };
         window.toggleSaveMenu = () => { state.showSaveMenu = !state.showSaveMenu; render(); };
-        window.setActiveTool = (tool) => { 
-            state.activeTool = tool; 
-            state.swapSourceIndex = null; 
-            render(); 
-        };
+        window.setActiveTool = (t) => { state.activeTool = t; state.swapSourceIndex = null; render(); };
         window.toggleRoster = () => { state.isRosterOpen = !state.isRosterOpen; render(); };
-        window.updateImportUrl = (val) => { state.importUrl = val; render(); };
-        window.updateImportText = (val) => { state.importText = val; }; 
+        window.updateImportText = (v) => { state.importText = v; };
         window.runImport = () => { parseStudents(state.importText); initSeats(); };
-        window.runUrlImport = () => handleUrlImport();
-        
-        window.updateRows = (val) => { 
-            let v = parseInt(val);
-            if (isNaN(v) || v < 1) v = 1;
-            if (v > 20) v = 20; 
-            state.rows = v; 
-            initSeats(); 
-        };
-        window.updateCols = (val) => { 
-            let v = parseInt(val);
-            if (isNaN(v) || v < 1) v = 1;
-            if (v > 12) v = 12; 
-            state.cols = v; 
-            initSeats(); 
-        };
-        
+        window.updateRows = (v) => { state.rows = Math.max(1, parseInt(v) || 1); initSeats(); };
+        window.updateCols = (v) => { state.cols = Math.max(1, parseInt(v) || 1); initSeats(); };
         window.toggleBlackboard = () => { state.blackboardPosition = state.blackboardPosition === 'top' ? 'bottom' : 'top'; render(); };
-        
-        window.clearSeats = () => {
-            // ロックされていない席の生徒IDを削除
-            state.seats = state.seats.map((studentId, i) => state.lockedSeats[i] ? studentId : null);
-            state.revealState = {};
-            render();
-        };
+        window.clearSeats = () => { state.seats = state.seats.map((id, i) => state.lockedSeats[i] ? id : null); state.revealState = {}; render(); };
+        window.toggleSidebar = () => { state.isSidebarCollapsed = !state.isSidebarCollapsed; render(); };
+        window.toggleControls = (v) => { state.isStudentControlsVisible = v; render(); };
 
-        window.toggleControls = (visible) => {
-            state.isStudentControlsVisible = visible;
-            render();
-        }
-
-        window.toggleSidebar = () => {
-            state.isSidebarCollapsed = !state.isSidebarCollapsed;
-            render();
-        }
-
-        window.handleSeatClick = (index) => {
-            if (state.activeTool === 'CURSOR') {
-                openSeatModal(index);
-            } else if (state.activeTool === 'EMPTY') {
-                if (state.seatAttributes[index] === 'EMPTY') {
-                    state.seatAttributes[index] = null;
-                } else {
-                    state.seatAttributes[index] = 'EMPTY';
-                    state.seats[index] = null;
-                    state.lockedSeats[index] = false;
-                }
-                render();
-            } else if (state.activeTool === 'M') {
-                state.seatAttributes[index] = state.seatAttributes[index] === 'M' ? null : 'M';
-                state.lockedSeats[index] = false;
-                render();
-            } else if (state.activeTool === 'F') {
-                state.seatAttributes[index] = state.seatAttributes[index] === 'F' ? null : 'F';
-                state.lockedSeats[index] = false;
-                render();
-            } else if (state.activeTool === 'SWAP') {
-                if (state.swapSourceIndex === null) {
-                    state.swapSourceIndex = index;
-                } else {
-                    // 入れ替え処理
-                    const sourceIdx = state.swapSourceIndex;
-                    const targetIdx = index;
-                    const temp = state.seats[sourceIdx];
-                    state.seats[sourceIdx] = state.seats[targetIdx];
-                    state.seats[targetIdx] = temp;
-                    state.swapSourceIndex = null;
-                }
+        window.handleSeatClick = (i) => {
+            if (state.activeTool === 'CURSOR') openSeatModal(i);
+            else if (state.activeTool === 'EMPTY') { state.seatAttributes[i] = state.seatAttributes[i] === 'EMPTY' ? null : 'EMPTY'; if(state.seatAttributes[i]){state.seats[i]=null; state.lockedSeats[i]=false;} render(); }
+            else if (state.activeTool === 'M') { state.seatAttributes[i] = state.seatAttributes[i] === 'M' ? null : 'M'; state.lockedSeats[i]=false; render(); }
+            else if (state.activeTool === 'F') { state.seatAttributes[i] = state.seatAttributes[i] === 'F' ? null : 'F'; state.lockedSeats[i]=false; render(); }
+            else if (state.activeTool === 'SWAP') {
+                if (state.swapSourceIndex === null) state.swapSourceIndex = i;
+                else { const temp = state.seats[state.swapSourceIndex]; state.seats[state.swapSourceIndex] = state.seats[i]; state.seats[i] = temp; state.swapSourceIndex = null; }
                 render();
             }
         };
 
-        window.studentToggleCard = (index) => {
-            if (state.isShuffling) return;
-            playFlip();
-            state.revealState[index] = !state.revealState[index];
-            render();
-        };
-
-        window.revealAll = () => {
-            playTada();
-            const newState = {};
-            state.seats.forEach((_, i) => newState[i] = true);
-            state.revealState = newState;
-            render();
-        };
-
+        window.studentToggleCard = (i) => { if (state.isShuffling) return; playFlip(); state.revealState[i] = !state.revealState[i]; render(); };
+        window.revealAll = () => { playTada(); state.seats.forEach((_, i) => state.revealState[i] = true); render(); };
         window.drumRollReveal = () => {
-            playDrumroll();
-            state.revealState = {};
-            render();
-            const unrevealedIndices = state.seats.map((_, i) => i).sort(() => Math.random() - 0.5);
-            unrevealedIndices.forEach((index, i) => {
-                setTimeout(() => {
-                    state.revealState[index] = true;
-                    playFlip();
-                    render(); 
-                }, i * 300 + 1000);
-            });
+            playDrumroll(); state.revealState = {}; render();
+            const ids = state.seats.map((_, i) => i).sort(() => Math.random() - 0.5);
+            ids.forEach((idx, i) => setTimeout(() => { state.revealState[idx] = true; playFlip(); render(); }, i * 300 + 1000));
         };
+        window.hideAll = () => { state.revealState = {}; render(); };
 
-        window.hideAll = () => {
-            state.revealState = {};
-            render();
-        }
-
-        // モーダル関連
-        function openSeatModal(index) {
-            state.editingSeatIndex = index;
-            state.searchQuery = '';
-            renderModal();
-            document.getElementById('modal-overlay').classList.remove('hidden');
-        }
-
-        window.closeModal = () => {
-            state.editingSeatIndex = null;
-            document.getElementById('modal-overlay').classList.add('hidden');
-        };
-
-        window.updateSearchQuery = (val) => {
-            state.searchQuery = val;
-            renderModal();
-        };
-
-        window.editSeat = (action, payload) => {
-            const index = state.editingSeatIndex;
-            if (index === null) return;
-
-            if (action === 'SET_EMPTY') {
-                state.seats[index] = null;
-                state.lockedSeats[index] = false;
-                state.seatAttributes[index] = 'EMPTY';
-            } else if (action === 'SET_ATTRIBUTE') {
-                state.seatAttributes[index] = payload;
-                state.lockedSeats[index] = false;
-                if (payload) state.seats[index] = null;
-            } else if (action === 'SET_STUDENT') {
-                const currentSeatOfStudent = state.seats.indexOf(payload);
-                if (currentSeatOfStudent !== -1) {
-                    state.seats[currentSeatOfStudent] = null;
-                    state.lockedSeats[currentSeatOfStudent] = false;
-                }
-                state.seats[index] = payload;
-                state.lockedSeats[index] = true;
-                state.seatAttributes[index] = null;
+        function openSeatModal(i) { state.editingSeatIndex = i; state.searchQuery = ''; renderModal(); document.getElementById('modal-overlay').classList.remove('hidden'); }
+        window.closeModal = () => { state.editingSeatIndex = null; document.getElementById('modal-overlay').classList.add('hidden'); };
+        window.updateSearchQuery = (v) => { state.searchQuery = v; renderModal(); };
+        window.editSeat = (act, p) => {
+            const i = state.editingSeatIndex;
+            if (act === 'SET_EMPTY') { state.seats[i] = null; state.lockedSeats[i] = false; state.seatAttributes[i] = 'EMPTY'; }
+            else if (act === 'SET_ATTRIBUTE') { state.seatAttributes[i] = p; state.lockedSeats[i] = false; if (p) state.seats[i] = null; }
+            else if (act === 'SET_STUDENT') {
+                const prev = state.seats.indexOf(p); if (prev !== -1) { state.seats[prev] = null; state.lockedSeats[prev] = false; }
+                state.seats[i] = p; state.lockedSeats[i] = true; state.seatAttributes[i] = null;
             }
-            closeModal();
-            render();
+            closeModal(); render();
         };
 
-        // 保存機能
         window.prepareAndCapture = async (type) => {
-            state.showSaveMenu = false;
-            render(); 
-            
-            const captureElement = document.getElementById('capture-container');
-            if (!captureElement) return;
-
+            state.showSaveMenu = false; render();
+            const el = document.getElementById('capture-container');
+            if (!el) return;
             try {
-                if (window.html2canvas) {
-                    // 自動計算: 幅 = 列数 * 180 + 余白, 高さ = 行数 * 140 + 余白
-                    const dynamicWidth = Math.max(1400, state.cols * 200 + 100);
-                    const dynamicHeight = Math.max(1000, state.rows * 160 + 200);
-
-                    const canvas = await window.html2canvas(captureElement, {
-                        scale: 3,
-                        backgroundColor: '#ffffff',
-                        logging: false,
-                        useCORS: true,
-                        windowWidth: dynamicWidth + 200, 
-                        windowHeight: dynamicHeight + 200,
-                        onclone: (clonedDoc) => {
-                            const el = clonedDoc.getElementById('capture-container');
-                            if (el) {
-                                // 保存用スタイル適用
-                                el.style.width = `${dynamicWidth}px`;
-                                el.style.height = 'auto'; 
-                                el.style.minHeight = `${dynamicHeight}px`;
-                                el.style.padding = '40px';
-                                el.style.overflow = 'visible';
-                                el.style.position = 'static';
-                                
-                                const main = clonedDoc.querySelector('main');
-                                if(main) {
-                                    main.style.overflow = 'visible';
-                                    main.style.height = 'auto';
-                                }
-                                
-                                const grid = el.querySelector('.seat-grid');
-                                if (grid) {
-                                    grid.style.height = 'auto';
-                                    grid.style.display = 'grid';
-                                    grid.style.gap = '20px';
-                                    grid.style.gridTemplateColumns = `repeat(${state.cols}, 1fr)`;
-                                    grid.style.gridTemplateRows = `repeat(${state.rows}, minmax(140px, auto))`;
-                                }
-                                
-                                const cells = el.querySelectorAll('.seat-cell');
-                                cells.forEach(cell => {
-                                    cell.style.height = 'auto';
-                                    cell.style.minHeight = '140px';
-                                    cell.style.aspectRatio = 'auto';
-                                    cell.style.display = 'flex';
-                                    cell.style.flexDirection = 'column';
-                                    cell.style.justifyContent = 'center';
-                                    
-                                    const nameDiv = cell.querySelector('.student-name');
-                                    if (nameDiv) {
-                                        nameDiv.style.fontSize = '28px';
-                                        nameDiv.style.lineHeight = '1.3';
-                                        nameDiv.style.whiteSpace = 'normal';
-                                        nameDiv.style.overflow = 'visible';
-                                        nameDiv.classList.remove('line-clamp-2');
-                                    }
-                                });
+                const canvas = await html2canvas(el, {
+                    scale: 3, backgroundColor: '#ffffff', useCORS: true,
+                    onclone: (cloned) => {
+                        const target = cloned.getElementById('capture-container');
+                        if (target) {
+                            target.style.width = '1400px'; target.style.height = 'auto'; target.style.padding = '50px';
+                            const grid = target.querySelector('.seat-grid');
+                            if (grid) {
+                                grid.style.display = 'grid';
+                                grid.style.gridTemplateColumns = `repeat(${state.cols}, 120px)`;
+                                grid.style.gridTemplateRows = `repeat(${state.rows}, 60px)`;
+                                grid.style.gap = '10px';
                             }
                         }
-                    });
-
-                    if (type === 'png') {
-                        const fileName = `座席表.png`;
-                        canvas.toBlob(async (blob) => {
-                            if (!blob) return;
-                            // iPad等での共有ダイアログ優先
-                            if (navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: 'image/png' })] })) {
-                                try { 
-                                    await navigator.share({ 
-                                        files: [new File([blob], fileName, { type: 'image/png' })], 
-                                        title: '座席表' 
-                                    }); 
-                                    return; 
-                                } catch (err) {
-                                    console.log("Share cancelled or failed", err);
-                                }
-                            }
-                            // 共有不可・キャンセルの場合はダウンロード
-                            const link = document.createElement('a');
-                            link.download = fileName;
-                            link.href = canvas.toDataURL();
-                            link.click();
-                        }, 'image/png');
-                    } else if (type === 'pdf' && window.jspdf) {
-                        const imgData = canvas.toDataURL('image/png');
-                        const { jsPDF } = window.jspdf;
-                        const pdf = new jsPDF({ orientation: 'landscape' });
-                        const imgProps = pdf.getImageProperties(imgData);
-                        const pdfWidth = pdf.internal.pageSize.getWidth();
-                        const pdfHeight = pdf.internal.pageSize.getHeight();
-                        const ratio = Math.min(pdfWidth / imgProps.width, pdfHeight / imgProps.height) * 0.9;
-                        pdf.addImage(imgData, 'PNG', (pdfWidth - imgProps.width * ratio)/2, (pdfHeight - imgProps.height * ratio)/2, imgProps.width * ratio, imgProps.height * ratio);
-                        pdf.save('座席表.pdf');
                     }
+                });
+                if (type === 'png') {
+                    canvas.toBlob(async (blob) => {
+                        if (!blob) return;
+                        const file = new File([blob], "座席表.png", { type: "image/png" });
+                        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                            try { await navigator.share({ files: [file], title: '座席表' }); return; } catch (e) {}
+                        }
+                        const a = document.createElement('a'); a.download = "座席表.png"; a.href = canvas.toDataURL(); a.click();
+                    });
+                } else {
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new jspdf.jsPDF({ orientation: 'landscape' });
+                    const pdfW = pdf.internal.pageSize.getWidth(), pdfH = pdf.internal.pageSize.getHeight();
+                    pdf.addImage(imgData, 'PNG', 10, 10, pdfW - 20, (pdfW - 20) * (canvas.height / canvas.width));
+                    pdf.save('座席表.pdf');
                 }
-            } catch (e) {
-                console.error(e);
-                alert("保存処理中にエラーが発生しました。");
-            }
+            } catch (e) { alert("保存に失敗しました。"); }
         };
 
+        function getStudent(id) { return state.students.find(s => s.id === id); }
 
-        // --- レンダリング ---
-        function render() {
-            const app = document.getElementById('app');
-            let content = '';
-
-            if (state.mode === 'teacher') {
-                content = renderTeacherMode();
-            } else {
-                content = renderStudentMode();
-            }
-            
-            app.innerHTML = content;
-            lucide.createIcons();
+        function renderBlackboard(pos) {
+            const chalkPos = pos === 'top' ? 'bottom-1' : 'top-1';
+            return `<div class="w-[70%] h-14 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative my-4 flex items-center justify-center overflow-hidden rounded-sm flex-shrink-0"><div class="absolute ${chalkPos} right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
         }
 
-        function renderTeacherMode() {
+        function renderTeacher() {
             const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
-            // ヘッダー (タイトル変更、イラスト削除)
             const header = `
                 <header class="w-full h-14 bg-white border-b px-4 flex justify-between items-center shadow-sm shrink-0 print:hidden z-30">
-                    <div class="flex items-center gap-2">
-                        <h1 class="font-bold text-gray-700 text-base md:text-lg flex items-center gap-2">
-                            席替えくん 
-                        </h1>
-                    </div>
-                    <div class="flex gap-2">
-                        <!-- PC用生徒モードボタン -->
-                        <button onclick="setMode('student')" class="hidden md:flex items-center gap-1 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="monitor" class="w-4 h-4"></i> 生徒モード</button>
-                    </div>
-                    <div class="flex gap-1 md:hidden">
-                        <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="p-1.5 bg-indigo-600 text-white rounded disabled:opacity-50"><i data-lucide="shuffle" class="w-3.5 h-3.5"></i></button>
-                        <button onclick="toggleSaveMenu()" class="p-1.5 bg-gray-200 text-gray-700 rounded relative">
-                            <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                            ${state.showSaveMenu ? renderSaveMenu() : ''}
-                        </button>
-                        <button onclick="setMode('student')" class="p-1.5 bg-teal-600 text-white rounded"><i data-lucide="monitor" class="w-3.5 h-3.5"></i></button>
-                    </div>
-                </header>
-            `;
+                    <h1 class="font-bold text-gray-700 text-lg">席替えくん</h1>
+                    <button onclick="setMode('student')" class="bg-teal-600 text-white px-3 py-1.5 rounded font-bold text-xs flex items-center gap-1"><i data-lucide="monitor" class="w-4 h-4"></i> 生徒モード</button>
+                </header>`;
 
-            // サイドバー (幅可変)
-            const sidebarWidth = state.isSidebarCollapsed ? 'w-16' : 'w-full md:w-64';
-            const hideWhenCollapsed = state.isSidebarCollapsed ? 'hidden' : '';
-            const btnClassNormal = 'flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white px-2 py-1.5 rounded font-bold shadow-sm text-xs w-full';
-            const btnClassCollapsed = 'flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white p-2 rounded font-bold shadow-sm';
-            
-            const clearBtnClassNormal = 'flex items-center justify-center gap-1 bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1.5 rounded font-bold shadow-sm text-xs w-full';
-            const clearBtnClassCollapsed = 'flex items-center justify-center bg-red-100 hover:bg-red-200 text-red-700 p-2 rounded font-bold shadow-sm';
-
+            const sidebarWidth = state.isSidebarCollapsed ? 'w-16' : 'w-64';
             const sidebar = `
-            <aside class="${sidebarWidth} bg-white border-b md:border-r md:border-b-0 p-2 overflow-y-auto print:hidden shadow-inner flex flex-col gap-2 shrink-0 h-auto md:h-full max-h-[40vh] md:max-h-full z-20 transition-all duration-300">
-                <div class="hidden md:flex justify-end">
-                    <button onclick="toggleSidebar()" class="text-gray-500 hover:text-gray-700"><i data-lucide="${state.isSidebarCollapsed ? 'chevron-right' : 'chevron-left'}" class="w-4 h-4"></i></button>
-                </div>
-
-                <div class="hidden md:flex flex-col gap-2">
-                    <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="${state.isSidebarCollapsed ? btnClassCollapsed : btnClassNormal}" title="席替え実行">
-                        <i data-lucide="shuffle" class="w-4 h-4"></i> ${state.isSidebarCollapsed ? '' : '席替え実行'}
-                    </button>
-                    <button onclick="clearSeats()" class="${state.isSidebarCollapsed ? clearBtnClassCollapsed : clearBtnClassNormal}" title="クリア">
-                        <i data-lucide="eraser" class="w-4 h-4"></i> ${state.isSidebarCollapsed ? '' : 'クリア'}
-                    </button>
-                    
-                    <div class="${hideWhenCollapsed} flex gap-1">
-                        <button onclick="window.print()" class="flex-1 flex items-center justify-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1.5 rounded font-bold text-xs"><i data-lucide="printer" class="w-3 h-3"></i> 印刷</button>
-                        <div class="relative flex-1">
-                            <button onclick="toggleSaveMenu()" class="w-full flex items-center justify-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1.5 rounded font-bold text-xs"><i data-lucide="download" class="w-3 h-3"></i> 保存</button>
-                            ${state.showSaveMenu ? renderSaveMenu() : ''}
-                        </div>
-                    </div>
-                    <button onclick="setMode('student')" class="${hideWhenCollapsed} flex items-center justify-center gap-1 bg-teal-600 hover:bg-teal-700 text-white px-2 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="monitor" class="w-3.5 h-3.5"></i> 生徒モード</button>
-                </div>
-
-                <div class="${hideWhenCollapsed}">
-                    <section class="bg-indigo-50 p-2 rounded border border-indigo-100 text-xs mb-2">
-                        <h2 class="font-bold text-indigo-800 uppercase mb-1 flex items-center"><i data-lucide="paint-bucket" class="mr-1 w-3 h-3"></i> 一括設定</h2>
-                        <div class="grid grid-cols-4 gap-1">
-                            ${renderToolButton('CURSOR', 'mouse-pointer-2', '選択', 'bg-white shadow text-indigo-700 font-bold')}
-                            ${renderToolButton('EMPTY', 'user-x', '空席', 'bg-gray-600 text-white shadow font-bold')}
-                            ${renderToolButton('M', null, '男子', 'bg-blue-500 text-white shadow font-bold', '♂')}
-                            ${renderToolButton('F', null, '女子', 'bg-pink-500 text-white shadow font-bold', '♀')}
-                        </div>
-                        <div class="mt-1">
-                            ${renderToolButton('SWAP', 'arrow-left-right', '入れ替え', 'bg-orange-500 text-white shadow font-bold')}
-                        </div>
-                    </section>
-
-                    <section class="text-xs border rounded p-2 bg-gray-50 mb-2">
-                        <div class="flex justify-between items-center cursor-pointer" onclick="toggleRoster()">
-                            <h2 class="font-bold text-gray-600 flex items-center"><i data-lucide="users" class="mr-1 w-3 h-3"></i> 名簿編集</h2>
-                            <i data-lucide="${state.isRosterOpen ? 'chevron-down' : 'chevron-right'}" class="w-3.5 h-3.5"></i>
-                        </div>
-                        ${state.isRosterOpen ? `
-                            <div class="mt-2 space-y-2">
-                                <div>
-                                    <div class="flex gap-1 mb-1">
-                                        <input type="text" placeholder="Spreadsheet URL" class="w-full p-1 border rounded" value="${state.importUrl}" oninput="updateImportUrl(this.value)">
-                                        <button onclick="runUrlImport()" class="bg-green-600 text-white p-1 rounded"><i data-lucide="link" class="w-3 h-3"></i></button>
-                                    </div>
-                                    ${state.importError ? `<p class="text-red-500 text-[10px]">${state.importError}</p>` : ''}
-                                </div>
-                                <textarea class="w-full h-24 p-1 border rounded font-mono text-[10px]" oninput="updateImportText(this.value)" placeholder="1, 佐藤, 男">${state.importText}</textarea>
-                                <button onclick="runImport()" class="w-full py-1 bg-gray-200 hover:bg-gray-300 rounded flex items-center justify-center gap-1 font-bold"><i data-lucide="refresh-cw" class="w-2.5 h-2.5"></i> 更新</button>
+                <aside class="${sidebarWidth} bg-white border-r h-full flex flex-col p-2 gap-3 transition-all duration-300 overflow-y-auto no-scrollbar print:hidden shrink-0">
+                    <button onclick="toggleSidebar()" class="self-end text-gray-400 hover:text-gray-600"><i data-lucide="${state.isSidebarCollapsed?'chevron-right':'chevron-left'}"></i></button>
+                    <button onclick="shuffleSeatsWithAnimation()" class="bg-indigo-600 text-white p-2 rounded font-bold text-xs flex items-center justify-center gap-2 shadow-sm"><i data-lucide="shuffle" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'席替え実行'}</button>
+                    <button onclick="clearSeats()" class="bg-red-50 text-red-600 p-2 rounded font-bold text-xs border border-red-100 flex items-center justify-center gap-2"><i data-lucide="eraser" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'クリア'}</button>
+                    <div class="${state.isSidebarCollapsed?'hidden':''}">
+                        <div class="flex gap-1">
+                            <button onclick="window.print()" class="flex-1 bg-gray-100 p-2 rounded text-[10px] font-bold">印刷</button>
+                            <div class="relative flex-1">
+                                <button onclick="toggleSaveMenu()" class="w-full bg-gray-100 p-2 rounded text-[10px] font-bold">保存</button>
+                                ${state.showSaveMenu ? `<div class="absolute top-full left-0 w-full bg-white border shadow-lg rounded z-50 py-1"><button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">画像</button><button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">PDF</button></div>` : ''}
                             </div>
-                        ` : ''}
-                    </section>
-
-                    <div class="text-xs mb-2">
-                        <h2 class="font-bold text-gray-500 uppercase mb-1 flex items-center"><i data-lucide="grid" class="mr-1 w-3 h-3"></i> 配置</h2>
-                        <div class="flex gap-1 mb-1 items-center">
-                            <label class="w-6">横</label>
-                            <button onclick="updateCols(${state.cols - 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">-</button>
-                            <input type="number" min="1" max="12" value="${state.cols}" onchange="updateCols(this.value)" class="w-8 p-0.5 border rounded text-center">
-                            <button onclick="updateCols(${state.cols + 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">+</button>
                         </div>
-                        <div class="flex gap-1 items-center">
-                            <label class="w-6">縦</label>
-                            <button onclick="updateRows(${state.rows - 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">-</button>
-                            <input type="number" min="1" max="12" value="${state.rows}" onchange="updateRows(this.value)" class="w-8 p-0.5 border rounded text-center">
-                            <button onclick="updateRows(${state.rows + 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">+</button>
+                        <section class="bg-indigo-50 p-2 rounded border border-indigo-100 mt-4">
+                            <h2 class="font-bold text-[10px] text-indigo-400 mb-2 uppercase">一括設定</h2>
+                            <div class="grid grid-cols-2 gap-1">
+                                <button onclick="setActiveTool('CURSOR')" class="p-1 rounded text-[10px] border ${state.activeTool==='CURSOR'?'bg-white shadow text-indigo-700':'text-indigo-400'}">選択</button>
+                                <button onclick="setActiveTool('EMPTY')" class="p-1 rounded text-[10px] border ${state.activeTool==='EMPTY'?'bg-gray-700 text-white':'text-indigo-400'}">空席</button>
+                                <button onclick="setActiveTool('M')" class="p-1 rounded text-[10px] border ${state.activeTool==='M'?'bg-blue-500 text-white':'text-indigo-400'}">♂ 男子</button>
+                                <button onclick="setActiveTool('F')" class="p-1 rounded text-[10px] border ${state.activeTool==='F'?'bg-pink-500 text-white':'text-indigo-400'}">♀ 女子</button>
+                            </div>
+                            <button onclick="setActiveTool('SWAP')" class="w-full mt-1 p-1 rounded text-[10px] border ${state.activeTool==='SWAP'?'bg-orange-500 text-white':'text-indigo-400'}">席の入れ替え</button>
+                        </section>
+                        <section class="border rounded p-2 text-[11px] mt-4">
+                            <div class="flex justify-between items-center cursor-pointer" onclick="toggleRoster()"><span class="font-bold text-gray-500">名簿編集</span><i data-lucide="${state.isRosterOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i></div>
+                            ${state.isRosterOpen ? `<textarea oninput="updateImportText(this.value)" class="w-full h-32 mt-2 p-1 border rounded text-[10px] font-mono no-scrollbar">${state.importText}</textarea><button onclick="runImport()" class="w-full bg-gray-100 mt-1 py-1 rounded font-bold">更新</button>` : ''}
+                        </section>
+                        <div class="text-[11px] space-y-2 mt-4">
+                            <div class="flex items-center justify-between">横幅 <div class="flex items-center gap-2"><button onclick="updateCols(${state.cols-1})" class="bg-gray-100 w-6 rounded">-</button><span class="w-4 text-center">${state.cols}</span><button onclick="updateCols(${state.cols+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
+                            <div class="flex items-center justify-between">縦幅 <div class="flex items-center gap-2"><button onclick="updateRows(${state.rows-1})" class="bg-gray-100 w-6 rounded">-</button><span class="w-4 text-center">${state.rows}</span><button onclick="updateRows(${state.rows+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
+                            <button onclick="toggleBlackboard()" class="w-full bg-white border py-1 rounded text-gray-500 mt-2">黒板の上下を切り替え</button>
                         </div>
                     </div>
-                    
-                    <button onclick="toggleBlackboard()" class="w-full py-1 bg-white border rounded hover:bg-gray-50 flex items-center justify-center gap-1 text-gray-700 text-xs"><i data-lucide="arrow-up-down" class="w-3 h-3"></i> 黒板: ${state.blackboardPosition === 'top' ? '上' : '下'}</button>
-                </div>
-            </aside>`;
-
-            // メインエリア (スクロール可 + 座席サイズ120x60)
-            const blackboardTop = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
-            const blackboardBottom = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mt-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute top-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
+                </aside>`;
 
             let gridCells = '';
             displayIndices.forEach(i => {
-                const studentId = state.seats[i];
-                const student = studentId ? getStudent(studentId) : null;
+                const sId = state.seats[i];
+                const student = sId ? getStudent(sId) : null;
                 const isLocked = state.lockedSeats[i];
-                const attr = state.seatAttributes[i];
                 const isSwapping = state.activeTool === 'SWAP' && state.swapSourceIndex === i;
-                
-                let bgColor = 'bg-gray-50';
-                let ringColor = isSwapping ? 'ring-4 ring-orange-400 z-10' : ''; // 入れ替え選択中は強調
-                
-                // アニメーションスタイル
-                let style = '';
-                if (state.isShuffling) {
-                    const rX = (Math.random()-0.5)*50;
-                    const rY = (Math.random()-0.5)*50;
-                    const rR = (Math.random()-0.5)*360;
-                    style = `transform: translate(${rX}px,${rY}px) rotate(${rR}deg) scale(0.9); transition: transform 0.5s ease-in-out; z-index: 100; opacity: 0.8;`;
-                } else {
-                    style = `transition: transform 0.5s ease-out;`;
-                }
+                const attr = state.seatAttributes[i];
 
-                if (!isSwapping) {
-                    if (student) {
-                        bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
-                    } else {
-                        if (isLocked) { bgColor = 'bg-white'; ringColor = 'ring-1 ring-red-400'; }
-                        else if (attr === 'EMPTY') { bgColor = 'bg-gray-200'; }
-                        else if (attr === 'M') { bgColor = 'bg-blue-50 border-blue-300 border border-dashed'; }
-                        else if (attr === 'F') { bgColor = 'bg-pink-50 border-pink-300 border border-dashed'; }
-                    }
-                }
+                let bgColor = 'bg-gray-50', ring = isSwapping ? 'ring-4 ring-orange-400 z-10' : '';
+                if (student) bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
+                else if (attr === 'EMPTY') bgColor = 'bg-gray-200';
+                else if (attr === 'M') bgColor = 'bg-blue-50 border-dashed border-blue-300';
+                else if (attr === 'F') bgColor = 'bg-pink-50 border-dashed border-pink-300';
+                else if (isLocked) bgColor = 'bg-white border-red-200';
 
-                let content = '';
-                if (student) {
-                    content = `<div class="w-full text-center flex flex-col justify-center h-full p-0.5 relative">
-                        <span class="text-[10px] md:text-xs text-gray-500 font-bold leading-none mb-0.5 absolute top-0 left-1">${student.number}</span>
-                        <div class="student-name text-[10px] md:text-xs lg:text-sm font-bold text-gray-800 leading-tight w-full break-all line-clamp-2 flex items-center justify-center h-full pt-1">${student.name}</div>
-                    </div>`;
-                } else {
-                    content = `<span class="text-gray-300 font-bold text-[10px]">${attr === 'EMPTY' ? '×' : i+1}</span>`;
-                }
-
-                let icons = '';
-                if (!student) {
-                    if (isLocked) icons += `<i data-lucide="lock" class="w-2 h-2 text-red-500"></i>`;
-                    if (attr === 'M') icons += `<span class="text-[8px] font-bold text-blue-500">♂</span>`;
-                    if (attr === 'F') icons += `<span class="text-[8px] font-bold text-pink-500">♀</span>`;
-                }
-
-                // スマホ・タブレットで幅に合わせつつ上限固定
-                const cellWidth = `min(120px, ${(100/state.cols).toFixed(2)}vw - 8px)`;
+                let style = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*40}px, ${(Math.random()-0.5)*40}px) rotate(${(Math.random()-0.5)*20}deg); transition: transform 0.2s;` : '';
 
                 gridCells += `
-                    <div onclick="handleSeatClick(${i})" class="seat-cell rounded border shadow-sm flex flex-col items-center justify-center cursor-pointer relative group border-gray-300 hover:border-gray-500 ${bgColor} ${ringColor} print:border-gray-800 print:shadow-none print:ring-0 overflow-hidden" style="${style} width: ${cellWidth}; height: 60px;">
-                        <div class="absolute top-0.5 left-0.5 flex gap-0.5 z-10">${icons}</div>
-                        ${content}
-                    </div>
-                `;
+                <div onclick="handleSeatClick(${i})" class="rounded border border-gray-300 flex flex-col items-center justify-center relative ${bgColor} ${ring} transition-all duration-300" style="width: 120px; height: 60px; ${style}">
+                    ${student ? `<span class="text-[12px] font-bold text-gray-400 absolute top-0.5 left-1">${student.number}</span><div class="student-name text-[13px] font-bold text-gray-800 line-clamp-2 text-center px-1">${student.name}</div>` : `<span class="text-gray-300 font-bold text-xs">${attr==='EMPTY'?'×':i+1}</span>`}
+                    <div class="absolute top-0.5 right-1">${!student && isLocked ? '<i data-lucide="lock" class="w-2 h-2 text-red-400"></i>' : ''}</div>
+                </div>`;
             });
 
-            const mainContentHtml = state.blackboardPosition === 'top' 
-                ? `${blackboardTop}<div class="seat-grid flex flex-wrap gap-1 justify-center max-w-full">${gridCells}</div>`
-                : `<div class="seat-grid flex flex-wrap gap-1 justify-center max-w-full">${gridCells}</div>${blackboardBottom}`;
+            const seatGridHtml = `<div class="seat-grid grid gap-1 p-2 bg-white rounded-lg shadow-inner" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${gridCells}</div>`;
 
             return `
-                <div class="flex flex-col h-full w-full bg-gray-100">
-                    ${header}
-                    <div class="flex flex-1 overflow-hidden flex-col md:flex-row">
-                        ${sidebar}
-                        <main class="flex-1 p-2 overflow-y-auto flex flex-col items-center min-h-0 pb-[100px] pt-4">
-                            <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-auto h-auto min-h-full">
-                                ${mainContentHtml}
-                            </div>
-                        </main>
-                    </div>
+                ${header}
+                <div class="flex flex-1 overflow-hidden">
+                    ${sidebar}
+                    <main class="flex-1 overflow-auto flex flex-col items-center p-4 pt-8 bg-gray-100 no-scrollbar pb-[100px]">
+                        <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-2 rounded-xl">
+                            ${state.blackboardPosition === 'top' ? renderBlackboard('top') : ''}
+                            ${seatGridHtml}
+                            ${state.blackboardPosition === 'bottom' ? renderBlackboard('bottom') : ''}
+                        </div>
+                    </main>
                 </div>
-                ${state.showSaveMenu ? `<div class="fixed inset-0 z-40" onclick="toggleSaveMenu()"></div>` : ''}
-            `;
+                ${state.showSaveMenu ? `<div class="fixed inset-0 z-40" onclick="toggleSaveMenu()"></div>` : ''}`;
         }
 
-        function renderStudentMode() {
+        function renderStudent() {
             const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
-            const controlsVisible = state.isStudentControlsVisible ? '' : 'hidden';
-            const showBtnVisible = state.isStudentControlsVisible ? 'hidden' : '';
-
             const controls = `
-            <div class="${controlsVisible} fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/90 to-transparent opacity-100 flex justify-center items-center gap-4 print:hidden h-24 z-50">
-                <button onclick="setMode('teacher')" class="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-base rounded backdrop-blur font-bold">設定</button>
-                <button onclick="toggleBlackboard()" class="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-base rounded backdrop-blur font-bold"><i data-lucide="arrow-up-down" class="w-5 h-5"></i></button>
-                <button onclick="toggleSound()" class="p-3 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur"><i data-lucide="${state.isSoundEnabled ? 'volume-2' : 'volume-x'}" class="w-5 h-5"></i></button>
-                <div class="w-px h-10 bg-white/20 mx-2"></div>
-                <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-500 text-white rounded shadow-lg font-bold flex items-center gap-2 transition-all active:scale-95 text-base"><i data-lucide="shuffle" class="w-5 h-5"></i> 席替え</button>
-                <button onclick="drumRollReveal()" ${state.isShuffling ? 'disabled' : ''} class="px-6 py-3 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-500 text-black font-bold text-base rounded shadow-lg flex items-center gap-2 transition-all active:scale-95">公開</button>
-                <button onclick="revealAll()" ${state.isShuffling ? 'disabled' : ''} class="px-8 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 text-white font-bold rounded shadow-lg transition-all active:scale-95 text-base">一斉</button>
-                <button onclick="toggleControls(false)" class="ml-2 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button>
-            </div>
-            <button onclick="toggleControls(true)" class="${showBtnVisible} fixed bottom-4 right-4 p-3 bg-gray-800/50 text-white rounded-full shadow-lg z-40 hover:bg-gray-800/80"><i data-lucide="chevron-up" class="w-6 h-6"></i></button>
-            `;
-
-            const blackboardTop = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
-            const blackboardBottom = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mt-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute top-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
+                <div class="fixed bottom-4 left-0 right-0 flex justify-center items-center z-50 transition-all ${state.isStudentControlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}">
+                    <div class="bg-black/60 backdrop-blur-md p-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-white/20">
+                        <button onclick="setMode('teacher')" class="px-4 py-2 bg-white/10 text-white rounded-xl font-bold text-sm">設定</button>
+                        <button onclick="toggleBlackboard()" class="px-4 py-2 bg-white/10 text-white rounded-xl font-bold text-sm">黒板切替</button>
+                        <button onclick="toggleSound()" class="p-2 bg-white/10 text-white rounded-full"><i data-lucide="${state.isSoundEnabled?'volume-2':'volume-x'}"></i></button>
+                        <div class="w-px h-8 bg-white/20 mx-2"></div>
+                        <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling?'disabled':''} class="bg-indigo-500 text-white px-6 py-2 rounded-xl font-bold shadow-lg flex items-center gap-2 active:scale-95 transition-all text-sm"><i data-lucide="shuffle" class="w-4 h-4"></i> 席替え</button>
+                        <button onclick="drumRollReveal()" ${state.isShuffling?'disabled':''} class="bg-yellow-500 text-black px-6 py-2 rounded-xl font-bold shadow-lg active:scale-95 text-sm">公開</button>
+                        <button onclick="revealAll()" ${state.isShuffling?'disabled':''} class="bg-green-500 text-white px-8 py-2 rounded-xl font-bold shadow-lg active:scale-95 text-sm">一斉</button>
+                        <button onclick="toggleControls(false)" class="p-2 bg-white/10 text-white rounded-full"><i data-lucide="x"></i></button>
+                    </div>
+                </div>
+                ${!state.isStudentControlsVisible ? `<button onclick="toggleControls(true)" class="fixed bottom-6 right-6 bg-indigo-500 text-white p-4 rounded-full shadow-2xl z-50"><i data-lucide="chevron-up"></i></button>` : ''}`;
 
             let gridCells = '';
-            displayIndices.forEach(originalIndex => {
-                const i = originalIndex;
-                const studentId = state.seats[i];
-                const student = studentId ? getStudent(studentId) : null;
-                const isRevealed = state.revealState[i];
+            displayIndices.forEach(i => {
+                const sId = state.seats[i];
+                const student = sId ? getStudent(sId) : null;
+                const isRev = state.revealState[i];
                 const attr = state.seatAttributes[i];
 
-                if (!student && (attr === 'EMPTY' || !studentId)) {
-                    gridCells += `<div class="border-2 border-dashed border-white/5 rounded flex items-center justify-center opacity-50 aspect-[3/2]"><span class="text-white/20 text-xs">×</span></div>`;
+                if (!student && (attr === 'EMPTY' || !sId)) {
+                    gridCells += `<div class="rounded border border-white/5 bg-black/10 flex items-center justify-center opacity-30" style="width: 120px; height: 60px;">×</div>`;
                     return;
                 }
 
-                let style = '';
-                if (state.isShuffling) {
-                    const rX = (Math.random()-0.5)*200;
-                    const rY = (Math.random()-0.5)*200;
-                    const rR = (Math.random()-0.5)*360;
-                    style = `transform: translate(${rX}px,${rY}px) rotate(${rR}deg) scale(0.8); transition: transform 0.5s ease-in-out; z-index: 100; opacity: 0.7;`;
-                } else {
-                    style = `transition: transform 0.5s ease-out;`;
-                }
-
-                const faceFront = `
-                    <div class="absolute inset-0 backface-hidden bg-[#f0e6d2] rounded shadow-sm border-b-2 border-r-2 border-[#d7ccc8] flex items-center justify-center">
-                        <div class="w-full h-full border border-dashed border-[#a1887f]/50 rounded m-0.5 flex flex-col items-center justify-center">
-                            <span class="text-[8px] md:text-xs font-bold text-[#8d6e63] opacity-40">No.</span>
-                            <span class="text-lg md:text-2xl font-bold text-[#8d6e63] opacity-30">${student?.number || '-'}</span>
-                        </div>
-                    </div>`;
-                
-                const bgColor = student?.gender === 'M' ? 'bg-blue-100 border-blue-200' : 'bg-pink-100 border-pink-200';
-                const faceBack = `
-                    <div class="absolute inset-0 backface-hidden rotate-y-180 rounded shadow-sm border flex flex-col items-center justify-center p-0.5 ${bgColor}" style="transform: rotateY(180deg); backface-visibility: hidden;">
-                        ${student ? `
-                            <span class="text-[8px] md:text-[10px] text-gray-500 font-bold absolute top-0.5 left-1">${student.number}</span>
-                            <div class="text-xs md:text-lg lg:text-xl font-black text-gray-800 break-all leading-tight text-center w-full px-0.5 line-clamp-2">${student.name}</div>
-                        ` : `<span class="text-gray-300 font-bold text-xs">空</span>`}
-                    </div>`;
-
-                const rotateClass = (isRevealed && !state.isShuffling) ? 'rotateY(180deg)' : 'rotateY(0deg)';
+                let anim = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*400}px, ${(Math.random()-0.5)*400}px) rotate(${(Math.random()-0.5)*360}deg); transition: transform 0.5s; opacity: 0.5;` : '';
 
                 gridCells += `
-                    <div onclick="studentToggleCard(${i})" class="perspective-1000 cursor-pointer group relative w-full h-full aspect-[3/2]" style="perspective: 1000px; ${style}">
-                        <div class="relative w-full h-full transition-all duration-500 transform-style-3d" style="transform: ${rotateClass};">
-                            ${faceFront}
-                            ${faceBack}
+                <div onclick="studentToggleCard(${i})" class="perspective-1000 cursor-pointer" style="width: 120px; height: 60px; ${anim}">
+                    <div class="relative w-full h-full transform-style-3d transition-transform duration-500 ${isRev?'rotate-y-180':''}" style="transform: ${isRev?'rotateY(180deg)':'rotateY(0deg)'};">
+                        <div class="absolute inset-0 backface-hidden bg-[#f3efe4] rounded-lg shadow-md border-b-4 border-r-4 border-gray-300 flex flex-col items-center justify-center">
+                            <span class="text-[10px] text-gray-400 font-bold">NO.</span>
+                            <span class="text-xl font-bold text-gray-400">${student?.number || '-'}</span>
+                        </div>
+                        <div class="absolute inset-0 backface-hidden rotate-y-180 rounded-lg shadow-md border-b-4 border-r-4 ${student?.gender==='M'?'bg-blue-100 border-blue-200':'bg-pink-100 border-pink-200'} flex items-center justify-center" style="transform: rotateY(180deg); backface-visibility: hidden;">
+                            ${student ? `<span class="absolute top-1 left-2 text-[10px] font-bold opacity-30">${student.number}</span><div class="text-[13px] font-bold text-gray-800 text-center px-1">${student.name}</div>` : ''}
                         </div>
                     </div>
-                `;
+                </div>`;
             });
 
-            // 生徒モードのDOM順序
-            const gridHtml = `<div class="grid gap-1 md:gap-2 w-full h-full flex-1" style="grid-template-columns: repeat(${state.cols}, minmax(0, 1fr)); grid-template-rows: repeat(${state.rows}, minmax(0, 1fr));">${gridCells}</div>`;
-            const mainContentHtml = state.blackboardPosition === 'top' 
-                ? `${blackboardTop}${gridHtml}`
-                : `${gridHtml}${blackboardBottom}`;
+            const gridHtml = `<div class="grid gap-2 p-2 justify-center content-center" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${gridCells}</div>`;
 
             return `
-                <div class="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans">
-                    <div class="absolute inset-0 pointer-events-none opacity-10 bg-repeat" style="background-image: radial-gradient(circle, #ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
-                    <div class="flex-1 w-full p-1 md:p-2 flex flex-col items-center justify-center overflow-hidden z-10 pb-[100px]">
-                        ${mainContentHtml}
+                <div class="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans p-4">
+                    <div class="absolute inset-0 pointer-events-none opacity-5" style="background-image: radial-gradient(circle, #ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
+                    <div class="flex-1 w-full flex flex-col items-center justify-center z-10 overflow-y-auto no-scrollbar pb-[100px]">
+                        ${state.blackboardPosition === 'top' ? renderBlackboard('top') + gridHtml : gridHtml + renderBlackboard('bottom')}
                     </div>
                     ${controls}
-                </div>
-            `;
+                </div>`;
         }
 
         function renderToolButton(tool, icon, label, activeClass, textIcon = '') {
-            const isActive = state.activeTool === tool;
-            const baseClass = "p-1 rounded flex flex-col md:flex-row items-center justify-center gap-1 w-full";
-            const colorClass = isActive ? activeClass : 'hover:bg-white/50 text-indigo-600';
-            const iconHtml = icon ? `<i data-lucide="${icon}" class="w-3 h-3"></i>` : '';
-            
-            return `<button onclick="setActiveTool('${tool}')" class="${baseClass} ${colorClass}">
-                ${iconHtml} ${textIcon} <span>${label}</span>
-            </button>`;
-        }
-
-        function renderSaveMenu() {
-            return `
-                <div class="absolute top-full left-0 mt-1 w-32 bg-white border rounded shadow-xl z-50 py-1 text-left">
-                    <button onclick="event.stopPropagation(); prepareAndCapture('pdf')" class="w-full text-left px-2 py-1 hover:bg-gray-50 flex items-center gap-1 text-xs text-gray-700"><i data-lucide="file-text" class="w-3 h-3"></i> PDF</button>
-                    <button onclick="event.stopPropagation(); prepareAndCapture('png')" class="w-full text-left px-2 py-1 hover:bg-gray-50 flex items-center gap-1 text-xs text-gray-700"><i data-lucide="image" class="w-3 h-3"></i> 画像</button>
-                </div>
-            `;
+            const active = state.activeTool === tool;
+            return `<button onclick="setActiveTool('${tool}')" class="p-2 rounded flex flex-col items-center justify-center gap-1 w-full border ${active ? activeClass : 'bg-white text-gray-400 border-gray-200'}"><span class="text-[10px] font-bold">${textIcon}</span>${label}</button>`;
         }
 
         function renderModal() {
             const content = document.getElementById('modal-content');
             if (!content || state.editingSeatIndex === null) return;
-
-            const index = state.editingSeatIndex;
-            const currentSeatId = state.seats[index];
-            const currentAttr = state.seatAttributes[index];
-            
-            const placedStudentIds = new Set(state.seats.filter(id => id !== null && id !== currentSeatId));
-            const availableStudents = state.students.filter(s => !placedStudentIds.has(s.id));
-            const filteredStudents = availableStudents.filter(s => (s.name || '').includes(state.searchQuery));
+            const i = state.editingSeatIndex, sId = state.seats[i], attr = state.seatAttributes[i];
+            const placed = new Set(state.seats.filter(id => id !== null && id !== sId));
+            const filtered = state.students.filter(s => !placed.has(s.id) && (s.name || '').includes(state.searchQuery));
 
             let listHtml = '';
-            filteredStudents.forEach(s => {
+            filtered.forEach(s => {
                 listHtml += `
-                <button onclick="editSeat('SET_STUDENT', '${s.id}')" class="w-full p-2 text-left flex justify-between items-center hover:bg-indigo-50 text-xs">
-                    <div class="flex items-center gap-2"><span class="text-gray-500 w-5">${s.number}</span><span>${s.name}</span></div>
-                    <span class="px-1.5 py-0.5 rounded ${s.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100'}">${s.gender === 'M' ? '男' : '女'}</span>
+                <button onclick="editSeat('SET_STUDENT', '${s.id}')" class="w-full p-3 text-left flex justify-between items-center hover:bg-indigo-50 border-b text-sm">
+                    <div class="flex items-center gap-3"><span class="text-gray-400 font-mono w-6">${s.number}</span><span class="font-bold">${s.name}</span></div>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold ${s.gender==='M'?'bg-blue-100 text-blue-600':'bg-pink-100 text-pink-600'}">${s.gender==='M'?'男':'女'}</span>
                 </button>`;
             });
 
             content.innerHTML = `
-                <div class="p-3 border-b bg-gray-50 flex justify-between items-center">
-                    <h3 class="font-bold text-base">座席設定 (No.${index + 1})</h3>
-                    <button onclick="closeModal()"><i data-lucide="x-circle" class="text-gray-400 hover:text-gray-600 w-5 h-5"></i></button>
-                </div>
-                <div class="p-3 overflow-y-auto">
-                    <div class="grid grid-cols-2 gap-2 mb-3">
-                        <button onclick="editSeat('SET_EMPTY')" class="p-2 border rounded flex items-center justify-center gap-1 text-xs ${currentAttr === 'EMPTY' ? 'bg-gray-200' : 'hover:bg-gray-50'}"><i data-lucide="user-x" class="w-3.5 h-3.5"></i> 空席</button>
-                        <button onclick="editSeat('SET_ATTRIBUTE', null)" class="p-2 border rounded flex items-center justify-center gap-1 text-xs ${!currentAttr && !state.lockedSeats[index] ? 'bg-white ring-2 ring-indigo-400' : 'hover:bg-gray-50'}"><i data-lucide="user" class="w-3.5 h-3.5"></i> 指定なし</button>
-                        <button onclick="editSeat('SET_ATTRIBUTE', 'M')" class="p-2 border rounded flex items-center justify-center gap-1 text-xs ${currentAttr === 'M' ? 'bg-blue-100 ring-2' : 'hover:bg-blue-50'}"><span class="text-blue-600 font-bold">♂</span> 男子席</button>
-                        <button onclick="editSeat('SET_ATTRIBUTE', 'F')" class="p-2 border rounded flex items-center justify-center gap-1 text-xs ${currentAttr === 'F' ? 'bg-pink-100 ring-2' : 'hover:bg-pink-50'}"><span class="text-pink-600 font-bold">♀</span> 女子席</button>
+                <div class="p-4 border-b bg-gray-50 flex justify-between items-center"><h3 class="font-bold">座席 No.${i + 1} の設定</h3><button onclick="closeModal()"><i data-lucide="x"></i></button></div>
+                <div class="p-4 space-y-4 overflow-y-auto no-scrollbar">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="editSeat('SET_ATTRIBUTE', 'EMPTY')" class="p-3 border rounded-xl text-[11px] font-bold ${attr==='EMPTY'?'bg-gray-800 text-white':'bg-white'}">空席にする</button>
+                        <button onclick="editSeat('SET_ATTRIBUTE', null)" class="p-3 border rounded-xl text-[11px] font-bold ${!attr && !state.lockedSeats[i]?'bg-indigo-600 text-white':'bg-white'}">指定なし</button>
                     </div>
-                    <hr class="my-2" />
-                    <input type="text" placeholder="名前検索..." class="w-full p-2 border rounded mb-2 text-xs" value="${state.searchQuery}" oninput="updateSearchQuery(this.value)">
-                    <div class="h-40 overflow-y-auto border rounded divide-y">
-                        ${listHtml}
-                    </div>
-                </div>
-            `;
+                    <div class="relative"><i data-lucide="search" class="absolute left-3 top-3 w-4 h-4 text-gray-400"></i><input type="text" placeholder="名前や番号で検索..." class="w-full pl-10 p-3 border rounded-xl text-sm" value="${state.searchQuery}" oninput="updateSearchQuery(this.value)"></div>
+                    <div class="max-h-60 overflow-y-auto border rounded-xl divide-y no-scrollbar">${listHtml}</div>
+                </div>`;
             lucide.createIcons();
         }
 
-        // 初期化
-        window.onload = () => {
-            parseStudents(INITIAL_STUDENTS_TEXT);
-            initSeats(); 
-        };
-
+        window.onload = () => { parseStudents(INITIAL_STUDENTS_TEXT); initSeats(); };
     </script>
 </body>
 </html>
