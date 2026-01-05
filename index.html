@@ -269,7 +269,6 @@
                 state.importText = text;
                 parseStudents(text);
                 state.importUrl = '';
-                // 名簿更新後は閉じない（確認のため）
                 initSeats(); 
             } catch (e) {
                 console.error(e);
@@ -334,7 +333,7 @@
         window.toggleSaveMenu = () => { state.showSaveMenu = !state.showSaveMenu; render(); };
         window.setActiveTool = (tool) => { 
             state.activeTool = tool; 
-            state.swapSourceIndex = null; // ツール変更時に選択解除
+            state.swapSourceIndex = null; 
             render(); 
         };
         window.toggleRoster = () => { state.isRosterOpen = !state.isRosterOpen; render(); };
@@ -361,7 +360,6 @@
         window.toggleBlackboard = () => { state.blackboardPosition = state.blackboardPosition === 'top' ? 'bottom' : 'top'; render(); };
         
         window.clearSeats = () => {
-            // ロックされていない席の生徒IDを削除
             state.seats = state.seats.map((studentId, i) => state.lockedSeats[i] ? studentId : null);
             state.revealState = {};
             render();
@@ -401,7 +399,6 @@
                 if (state.swapSourceIndex === null) {
                     state.swapSourceIndex = index;
                 } else {
-                    // 入れ替え処理
                     const sourceIdx = state.swapSourceIndex;
                     const targetIdx = index;
                     const temp = state.seats[sourceIdx];
@@ -501,7 +498,6 @@
 
             try {
                 if (window.html2canvas) {
-                    // 自動計算: 幅 = 列数 * 180 + 余白, 高さ = 行数 * 140 + 余白
                     const dynamicWidth = Math.max(1400, state.cols * 200 + 100);
                     const dynamicHeight = Math.max(1000, state.rows * 160 + 200);
 
@@ -515,9 +511,8 @@
                         onclone: (clonedDoc) => {
                             const el = clonedDoc.getElementById('capture-container');
                             if (el) {
-                                // 保存用スタイル適用
                                 el.style.width = `${dynamicWidth}px`;
-                                el.style.height = 'auto'; // 高さは内容に合わせて
+                                el.style.height = 'auto'; 
                                 el.style.minHeight = `${dynamicHeight}px`;
                                 el.style.padding = '40px';
                                 el.style.overflow = 'visible';
@@ -533,24 +528,23 @@
                                 if (grid) {
                                     grid.style.height = 'auto';
                                     grid.style.display = 'grid';
-                                    grid.style.gap = '20px'; // 隙間を広めに
+                                    grid.style.gap = '20px';
                                     grid.style.gridTemplateColumns = `repeat(${state.cols}, 1fr)`;
-                                    // 行の高さも確保 (60px -> 140pxに拡張して保存)
                                     grid.style.gridTemplateRows = `repeat(${state.rows}, minmax(140px, auto))`;
                                 }
                                 
                                 const cells = el.querySelectorAll('.seat-cell');
                                 cells.forEach(cell => {
                                     cell.style.height = 'auto';
-                                    cell.style.minHeight = '140px'; // セルの高さ確保
-                                    cell.style.aspectRatio = 'auto'; // アスペクト比解除
+                                    cell.style.minHeight = '140px';
+                                    cell.style.aspectRatio = 'auto';
                                     cell.style.display = 'flex';
                                     cell.style.flexDirection = 'column';
                                     cell.style.justifyContent = 'center';
                                     
                                     const nameDiv = cell.querySelector('.student-name');
                                     if (nameDiv) {
-                                        nameDiv.style.fontSize = '28px'; // フォント大きく
+                                        nameDiv.style.fontSize = '28px';
                                         nameDiv.style.lineHeight = '1.3';
                                         nameDiv.style.whiteSpace = 'normal';
                                         nameDiv.style.overflow = 'visible';
@@ -610,14 +604,16 @@
             const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
-            // ヘッダー (アイコン削除、タイトル変更)
             const header = `
                 <header class="w-full h-14 bg-white border-b px-4 flex justify-between items-center shadow-sm shrink-0 print:hidden z-30">
                     <div class="flex items-center gap-2">
-                        <h1 class="font-bold text-gray-700 text-base md:text-lg">席替えくん</h1>
+                        <h1 class="font-bold text-gray-700 text-base md:text-lg flex items-center gap-2">
+                            席替えくん 
+                            <!-- ここにイラストのURLを入れてください。例: src="https://example.com/icon.png" -->
+                            <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM0QjU1NjMiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMyAyMXYtOCIvPjxwYXRoIGQ9Ik0zIDEwVjUiLz48cGF0aCBkPSJNMjEgMTB1LThhMiAyIDAgMCAwLTIgMmwtMS41IDciLz48cGF0aCBkPSJNMjEgMjF2LThhMiAyIDAgMCAwLTItMmwtMS41IDciLz48cGF0aCBkPSJNMCAyMWgyNCIvPjwvc3ZnPg==" class="h-6 w-auto opacity-80" alt="School Icon" />
+                        </h1>
                     </div>
                     <div class="flex gap-2">
-                        <!-- PC用生徒モードボタン -->
                         <button onclick="setMode('student')" class="hidden md:flex items-center gap-1 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="monitor" class="w-4 h-4"></i> 生徒モード</button>
                     </div>
                     <div class="flex gap-1 md:hidden">
@@ -631,7 +627,6 @@
                 </header>
             `;
 
-            // サイドバー (幅可変)
             const sidebarWidth = state.isSidebarCollapsed ? 'w-16' : 'w-full md:w-64';
             const hideWhenCollapsed = state.isSidebarCollapsed ? 'hidden' : '';
             const btnClassNormal = 'flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white px-2 py-1.5 rounded font-bold shadow-sm text-xs w-full';
@@ -885,6 +880,7 @@
                 `;
             });
 
+            // Flex-directionの制御 (Top: flex-col, Bottom: flex-col-reverse)
             const flexDir = state.blackboardPosition === 'top' ? 'flex-col' : 'flex-col-reverse justify-end';
 
             return `
