@@ -40,30 +40,7 @@
     </div>
 
     <script>
-        const state = {
-            mode: 'teacher', 
-            students: [],
-            rows: 8,
-            cols: 6,
-            seats: [], 
-            lockedSeats: {}, 
-            seatAttributes: {}, 
-            importText: INITIAL_STUDENTS_TEXT || '',
-            importUrl: '',
-            revealState: {},
-            blackboardPosition: 'top',
-            isShuffling: false,
-            activeTool: 'CURSOR', 
-            swapSourceIndex: null, 
-            editingSeatIndex: null,
-            searchQuery: '',
-            showSaveMenu: false,
-            isRosterOpen: true, 
-            isSoundEnabled: true,
-            isStudentControlsVisible: true,
-            isSidebarCollapsed: false 
-        };
-
+        // --- データ定義 ---
         const INITIAL_STUDENTS_TEXT = `1, 佐藤 健, 男
 2, 鈴木 愛, 女
 3, 高橋 翔, 男
@@ -113,6 +90,32 @@
 47, 森本 悠真, 男
 48, 今井 桜, 女`;
 
+        // --- 状態管理 ---
+        const state = {
+            mode: 'teacher', 
+            students: [],
+            rows: 8,
+            cols: 6,
+            seats: [], 
+            lockedSeats: {}, 
+            seatAttributes: {}, 
+            importText: INITIAL_STUDENTS_TEXT,
+            importUrl: '',
+            revealState: {},
+            blackboardPosition: 'top',
+            isShuffling: false,
+            activeTool: 'CURSOR', 
+            swapSourceIndex: null, 
+            editingSeatIndex: null,
+            searchQuery: '',
+            showSaveMenu: false,
+            isRosterOpen: true, 
+            isSoundEnabled: true,
+            isStudentControlsVisible: true,
+            isSidebarCollapsed: false 
+        };
+
+        // --- 音声再生 ---
         let audioCtx = null;
         function initAudio() {
             const AC = window.AudioContext || window.webkitAudioContext;
@@ -121,20 +124,31 @@
         function playTone(freq, type, duration, startTime = 0, vol = 0.1) {
             if (!audioCtx || !state.isSoundEnabled) return;
             if (audioCtx.state === 'suspended') audioCtx.resume();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, audioCtx.currentTime + startTime);
-            gain.gain.setValueAtTime(0, audioCtx.currentTime + startTime);
-            gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + startTime + 0.01);
-            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.start(audioCtx.currentTime + startTime); osc.stop(audioCtx.currentTime + startTime + duration);
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime + startTime);
+                gain.gain.setValueAtTime(0, audioCtx.currentTime + startTime);
+                gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + startTime + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime + startTime); osc.stop(audioCtx.currentTime + startTime + duration);
+            } catch(e){}
         }
         function playFlip() { initAudio(); playTone(1000 + Math.random() * 200, 'sine', 0.1, 0, 0.08); }
-        function playDrumroll() { initAudio(); if (!audioCtx || !state.isSoundEnabled) return; for (let i = 0; i < 12; i++) { playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15); } }
-        function playTada() { initAudio(); if (!audioCtx || !state.isSoundEnabled) return; [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((freq, i) => { playTone(freq, 'triangle', 1.8, i * 0.06, 0.15); }); }
+        function playDrumroll() {
+            initAudio();
+            if (!audioCtx || !state.isSoundEnabled) return;
+            for (let i = 0; i < 12; i++) { playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15); }
+        }
+        function playTada() {
+            initAudio();
+            if (!audioCtx || !state.isSoundEnabled) return;
+            [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((freq, i) => { playTone(freq, 'triangle', 1.8, i * 0.06, 0.15); });
+        }
 
+        // --- ロジック ---
         function parseStudents(text) {
             const lines = text.trim().split('\n');
             state.students = lines.map((line, i) => {
@@ -154,7 +168,9 @@
         function initSeats() {
             const newSize = state.rows * state.cols;
             const newSeats = new Array(newSize).fill(null);
-            for (let i = 0; i < Math.min(state.seats.length, newSize); i++) { newSeats[i] = state.seats[i]; }
+            for (let i = 0; i < Math.min(state.seats.length, newSize); i++) {
+                newSeats[i] = state.seats[i];
+            }
             state.seats = newSeats;
             const resizeObj = (prev) => {
                 const next = {};
@@ -169,10 +185,14 @@
         function shuffleSeatsLogic() {
             let newSeats = [...state.seats];
             const lockedIds = new Set();
-            for (let i = 0; i < newSeats.length; i++) { if (state.lockedSeats[i] && newSeats[i]) lockedIds.add(newSeats[i]); else newSeats[i] = null; }
+            for (let i = 0; i < newSeats.length; i++) {
+                if (state.lockedSeats[i] && newSeats[i]) lockedIds.add(newSeats[i]);
+                else newSeats[i] = null;
+            }
             let pool = state.students.filter(s => !lockedIds.has(s.id));
             let boys = pool.filter(s => s.gender === 'M').sort(() => Math.random() - 0.5);
             let girls = pool.filter(s => s.gender === 'F').sort(() => Math.random() - 0.5);
+            
             for (let i = 0; i < newSeats.length; i++) {
                 if (state.lockedSeats[i]) continue;
                 const attr = state.seatAttributes[i];
@@ -181,16 +201,29 @@
             }
             let remaining = [...boys, ...girls].sort(() => Math.random() - 0.5);
             for (let i = 0; i < newSeats.length; i++) {
-                if (!newSeats[i] && state.seatAttributes[i] !== 'EMPTY' && remaining.length > 0) newSeats[i] = remaining.pop().id;
+                if (!newSeats[i] && state.seatAttributes[i] !== 'EMPTY' && remaining.length > 0) {
+                    newSeats[i] = remaining.pop().id;
+                }
             }
-            state.seats = newSeats; state.revealState = {}; render();
+            state.seats = newSeats;
+            state.revealState = {};
+            render();
         }
 
         function shuffleSeatsWithAnimation() {
-            state.isShuffling = true; playDrumroll(); render();
-            setTimeout(() => { shuffleSeatsLogic(); state.isShuffling = false; playTada(); render(); }, 1500);
+            if (state.isShuffling) return;
+            state.isShuffling = true;
+            playDrumroll();
+            render();
+            setTimeout(() => {
+                shuffleSeatsLogic();
+                state.isShuffling = false;
+                playTada();
+                render();
+            }, 1500);
         }
 
+        // --- ウィンドウ操作 ---
         window.setMode = (m) => { state.mode = m; render(); };
         window.toggleSound = () => { state.isSoundEnabled = !state.isSoundEnabled; render(); };
         window.toggleSaveMenu = () => { state.showSaveMenu = !state.showSaveMenu; render(); };
@@ -207,12 +240,21 @@
 
         window.handleSeatClick = (i) => {
             if (state.activeTool === 'CURSOR') openSeatModal(i);
-            else if (state.activeTool === 'EMPTY') { state.seatAttributes[i] = state.seatAttributes[i] === 'EMPTY' ? null : 'EMPTY'; if(state.seatAttributes[i]){state.seats[i]=null; state.lockedSeats[i]=false;} render(); }
+            else if (state.activeTool === 'EMPTY') { 
+                state.seatAttributes[i] = state.seatAttributes[i] === 'EMPTY' ? null : 'EMPTY'; 
+                if(state.seatAttributes[i]){state.seats[i]=null; state.lockedSeats[i]=false;} 
+                render(); 
+            }
             else if (state.activeTool === 'M') { state.seatAttributes[i] = state.seatAttributes[i] === 'M' ? null : 'M'; state.lockedSeats[i]=false; render(); }
             else if (state.activeTool === 'F') { state.seatAttributes[i] = state.seatAttributes[i] === 'F' ? null : 'F'; state.lockedSeats[i]=false; render(); }
             else if (state.activeTool === 'SWAP') {
                 if (state.swapSourceIndex === null) state.swapSourceIndex = i;
-                else { const temp = state.seats[state.swapSourceIndex]; state.seats[state.swapSourceIndex] = state.seats[i]; state.seats[i] = temp; state.swapSourceIndex = null; }
+                else {
+                    const temp = state.seats[state.swapSourceIndex];
+                    state.seats[state.swapSourceIndex] = state.seats[i];
+                    state.seats[i] = temp;
+                    state.swapSourceIndex = null;
+                }
                 render();
             }
         };
@@ -240,6 +282,7 @@
             closeModal(); render();
         };
 
+        // --- 保存処理 (安定版) ---
         window.prepareAndCapture = async (type) => {
             state.showSaveMenu = false; render();
             const el = document.getElementById('capture-container');
@@ -273,11 +316,11 @@
                 } else {
                     const imgData = canvas.toDataURL('image/png');
                     const pdf = new jspdf.jsPDF({ orientation: 'landscape' });
-                    const pdfW = pdf.internal.pageSize.getWidth(), pdfH = pdf.internal.pageSize.getHeight();
-                    pdf.addImage(imgData, 'PNG', 10, 10, pdfW - 20, (pdfW - 20) * (canvas.height / canvas.width));
+                    const pdfW = pdf.internal.pageSize.getWidth();
+                    pdf.addImage(imgData, 'PNG', 10, 10, pdfW - 20, 0);
                     pdf.save('座席表.pdf');
                 }
-            } catch (e) { alert("保存に失敗しました。"); }
+            } catch (e) { alert("保存中にエラーが発生しました。"); }
         };
 
         function getStudent(id) { return state.students.find(s => s.id === id); }
@@ -287,60 +330,26 @@
             return `<div class="w-[70%] h-14 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative my-4 flex items-center justify-center overflow-hidden rounded-sm flex-shrink-0"><div class="absolute ${chalkPos} right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
         }
 
-        function renderTeacher() {
+        // --- 画面レンダリング ---
+        function render() {
+            const app = document.getElementById('app');
+            if (state.mode === 'teacher') renderTeacher(app);
+            else renderStudent(app);
+            lucide.createIcons();
+        }
+
+        function renderTeacher(container) {
             const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
-            const header = `
-                <header class="w-full h-14 bg-white border-b px-4 flex justify-between items-center shadow-sm shrink-0 print:hidden z-30">
-                    <h1 class="font-bold text-gray-700 text-lg">席替えくん</h1>
-                    <button onclick="setMode('student')" class="bg-teal-600 text-white px-3 py-1.5 rounded font-bold text-xs flex items-center gap-1"><i data-lucide="monitor" class="w-4 h-4"></i> 生徒モード</button>
-                </header>`;
-
             const sidebarWidth = state.isSidebarCollapsed ? 'w-16' : 'w-64';
-            const sidebar = `
-                <aside class="${sidebarWidth} bg-white border-r h-full flex flex-col p-2 gap-3 transition-all duration-300 overflow-y-auto no-scrollbar print:hidden shrink-0">
-                    <button onclick="toggleSidebar()" class="self-end text-gray-400 hover:text-gray-600"><i data-lucide="${state.isSidebarCollapsed?'chevron-right':'chevron-left'}"></i></button>
-                    <button onclick="shuffleSeatsWithAnimation()" class="bg-indigo-600 text-white p-2 rounded font-bold text-xs flex items-center justify-center gap-2 shadow-sm"><i data-lucide="shuffle" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'席替え実行'}</button>
-                    <button onclick="clearSeats()" class="bg-red-50 text-red-600 p-2 rounded font-bold text-xs border border-red-100 flex items-center justify-center gap-2"><i data-lucide="eraser" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'クリア'}</button>
-                    <div class="${state.isSidebarCollapsed?'hidden':''}">
-                        <div class="flex gap-1">
-                            <button onclick="window.print()" class="flex-1 bg-gray-100 p-2 rounded text-[10px] font-bold">印刷</button>
-                            <div class="relative flex-1">
-                                <button onclick="toggleSaveMenu()" class="w-full bg-gray-100 p-2 rounded text-[10px] font-bold">保存</button>
-                                ${state.showSaveMenu ? `<div class="absolute top-full left-0 w-full bg-white border shadow-lg rounded z-50 py-1"><button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">画像</button><button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">PDF</button></div>` : ''}
-                            </div>
-                        </div>
-                        <section class="bg-indigo-50 p-2 rounded border border-indigo-100 mt-4">
-                            <h2 class="font-bold text-[10px] text-indigo-400 mb-2 uppercase">一括設定</h2>
-                            <div class="grid grid-cols-2 gap-1">
-                                <button onclick="setActiveTool('CURSOR')" class="p-1 rounded text-[10px] border ${state.activeTool==='CURSOR'?'bg-white shadow text-indigo-700':'text-indigo-400'}">選択</button>
-                                <button onclick="setActiveTool('EMPTY')" class="p-1 rounded text-[10px] border ${state.activeTool==='EMPTY'?'bg-gray-700 text-white':'text-indigo-400'}">空席</button>
-                                <button onclick="setActiveTool('M')" class="p-1 rounded text-[10px] border ${state.activeTool==='M'?'bg-blue-500 text-white':'text-indigo-400'}">♂ 男子</button>
-                                <button onclick="setActiveTool('F')" class="p-1 rounded text-[10px] border ${state.activeTool==='F'?'bg-pink-500 text-white':'text-indigo-400'}">♀ 女子</button>
-                            </div>
-                            <button onclick="setActiveTool('SWAP')" class="w-full mt-1 p-1 rounded text-[10px] border ${state.activeTool==='SWAP'?'bg-orange-500 text-white':'text-indigo-400'}">席の入れ替え</button>
-                        </section>
-                        <section class="border rounded p-2 text-[11px] mt-4">
-                            <div class="flex justify-between items-center cursor-pointer" onclick="toggleRoster()"><span class="font-bold text-gray-500">名簿編集</span><i data-lucide="${state.isRosterOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i></div>
-                            ${state.isRosterOpen ? `<textarea oninput="updateImportText(this.value)" class="w-full h-32 mt-2 p-1 border rounded text-[10px] font-mono no-scrollbar">${state.importText}</textarea><button onclick="runImport()" class="w-full bg-gray-100 mt-1 py-1 rounded font-bold">更新</button>` : ''}
-                        </section>
-                        <div class="text-[11px] space-y-2 mt-4">
-                            <div class="flex items-center justify-between">横幅 <div class="flex items-center gap-2"><button onclick="updateCols(${state.cols-1})" class="bg-gray-100 w-6 rounded">-</button><span class="w-4 text-center">${state.cols}</span><button onclick="updateCols(${state.cols+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
-                            <div class="flex items-center justify-between">縦幅 <div class="flex items-center gap-2"><button onclick="updateRows(${state.rows-1})" class="bg-gray-100 w-6 rounded">-</button><span class="w-4 text-center">${state.rows}</span><button onclick="updateRows(${state.rows+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
-                            <button onclick="toggleBlackboard()" class="w-full bg-white border py-1 rounded text-gray-500 mt-2">黒板の上下を切り替え</button>
-                        </div>
-                    </div>
-                </aside>`;
-
-            let gridCells = '';
+            let cellsHtml = '';
             displayIndices.forEach(i => {
-                const sId = state.seats[i];
-                const student = sId ? getStudent(sId) : null;
+                const student = getStudent(state.seats[i]);
+                const attr = state.seatAttributes[i];
                 const isLocked = state.lockedSeats[i];
                 const isSwapping = state.activeTool === 'SWAP' && state.swapSourceIndex === i;
-                const attr = state.seatAttributes[i];
-
+                
                 let bgColor = 'bg-gray-50', ring = isSwapping ? 'ring-4 ring-orange-400 z-10' : '';
                 if (student) bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
                 else if (attr === 'EMPTY') bgColor = 'bg-gray-200';
@@ -348,46 +357,80 @@
                 else if (attr === 'F') bgColor = 'bg-pink-50 border-dashed border-pink-300';
                 else if (isLocked) bgColor = 'bg-white border-red-200';
 
-                let style = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*40}px, ${(Math.random()-0.5)*40}px) rotate(${(Math.random()-0.5)*20}deg); transition: transform 0.2s;` : '';
+                let animStyle = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*40}px, ${(Math.random()-0.5)*40}px) rotate(${(Math.random()-0.5)*20}deg);` : '';
 
-                gridCells += `
-                <div onclick="handleSeatClick(${i})" class="rounded border border-gray-300 flex flex-col items-center justify-center relative ${bgColor} ${ring} transition-all duration-300" style="width: 120px; height: 60px; ${style}">
-                    ${student ? `<span class="text-[12px] font-bold text-gray-400 absolute top-0.5 left-1">${student.number}</span><div class="student-name text-[13px] font-bold text-gray-800 line-clamp-2 text-center px-1">${student.name}</div>` : `<span class="text-gray-300 font-bold text-xs">${attr==='EMPTY'?'×':i+1}</span>`}
+                cellsHtml += `
+                <div onclick="handleSeatClick(${i})" class="rounded border border-gray-300 flex flex-col items-center justify-center relative ${bgColor} ${ring} overflow-hidden" style="width: 120px; height: 60px; ${animStyle}">
+                    ${student ? `<span class="text-[12px] font-bold text-gray-400 absolute top-0.5 left-1">${student.number}</span><div class="text-[13px] font-bold text-gray-800 line-clamp-2 text-center px-1">${student.name}</div>` : `<span class="text-gray-300 font-bold text-xs">${attr==='EMPTY'?'×':i+1}</span>`}
                     <div class="absolute top-0.5 right-1">${!student && isLocked ? '<i data-lucide="lock" class="w-2 h-2 text-red-400"></i>' : ''}</div>
                 </div>`;
             });
 
-            const seatGridHtml = `<div class="seat-grid grid gap-1 p-2 bg-white rounded-lg shadow-inner" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${gridCells}</div>`;
+            const gridHtml = `<div class="seat-grid grid gap-1 p-2 bg-white rounded-lg shadow-inner" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${cellsHtml}</div>`;
 
-            return `
-                ${header}
+            container.innerHTML = `
+                <header class="w-full h-14 bg-white border-b px-4 flex justify-between items-center shadow-sm shrink-0 z-30">
+                    <h1 class="font-bold text-gray-700 text-lg">席替えくん</h1>
+                    <button onclick="setMode('student')" class="bg-teal-600 text-white px-3 py-1.5 rounded font-bold text-xs flex items-center gap-1"><i data-lucide="monitor" class="w-4 h-4"></i> 生徒モード</button>
+                </header>
                 <div class="flex flex-1 overflow-hidden">
-                    ${sidebar}
-                    <main class="flex-1 overflow-auto flex flex-col items-center p-4 pt-8 bg-gray-100 no-scrollbar pb-[100px]">
+                    <aside class="${sidebarWidth} bg-white border-r h-full flex flex-col p-2 gap-3 transition-all duration-300 overflow-y-auto no-scrollbar print:hidden shrink-0">
+                        <button onclick="toggleSidebar()" class="self-end text-gray-400 hover:text-gray-600"><i data-lucide="${state.isSidebarCollapsed?'chevron-right':'chevron-left'}"></i></button>
+                        <button onclick="shuffleSeatsWithAnimation()" class="bg-indigo-600 text-white p-2 rounded font-bold text-xs flex items-center justify-center gap-2"><i data-lucide="shuffle" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'席替え実行'}</button>
+                        <button onclick="clearSeats()" class="bg-red-50 text-red-600 p-2 rounded font-bold text-xs border border-red-100 flex items-center justify-center gap-2"><i data-lucide="eraser" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'クリア'}</button>
+                        <div class="${state.isSidebarCollapsed?'hidden':''}">
+                            <div class="flex gap-1">
+                                <button onclick="window.print()" class="flex-1 bg-gray-100 p-2 rounded text-[10px] font-bold">印刷</button>
+                                <div class="relative flex-1">
+                                    <button onclick="toggleSaveMenu()" class="w-full bg-gray-100 p-2 rounded text-[10px] font-bold">保存</button>
+                                    ${state.showSaveMenu ? `<div class="absolute top-full left-0 w-full bg-white border shadow-lg rounded z-50 py-1"><button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">画像</button><button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">PDF</button></div>` : ''}
+                                </div>
+                            </div>
+                            <section class="bg-indigo-50 p-2 rounded border border-indigo-100 mt-4">
+                                <h2 class="font-bold text-[10px] text-indigo-400 mb-2">一括設定</h2>
+                                <div class="grid grid-cols-2 gap-1">
+                                    <button onclick="setActiveTool('CURSOR')" class="p-1 rounded text-[10px] border ${state.activeTool==='CURSOR'?'bg-white shadow text-indigo-700':'text-indigo-400'}">選択</button>
+                                    <button onclick="setActiveTool('EMPTY')" class="p-1 rounded text-[10px] border ${state.activeTool==='EMPTY'?'bg-gray-700 text-white':'text-indigo-400'}">空席</button>
+                                    <button onclick="setActiveTool('M')" class="p-1 rounded text-[10px] border ${state.activeTool==='M'?'bg-blue-500 text-white':'text-indigo-400'}">♂ 男子</button>
+                                    <button onclick="setActiveTool('F')" class="p-1 rounded text-[10px] border ${state.activeTool==='F'?'bg-pink-500 text-white':'text-indigo-400'}">♀ 女子</button>
+                                </div>
+                                <button onclick="setActiveTool('SWAP')" class="w-full mt-1 p-1 rounded text-[10px] border ${state.activeTool==='SWAP'?'bg-orange-500 text-white':'text-indigo-400'}">席の入れ替え</button>
+                            </section>
+                            <section class="border rounded p-2 text-[11px] mt-4">
+                                <div class="flex justify-between items-center cursor-pointer" onclick="toggleRoster()"><span class="font-bold text-gray-500">名簿編集</span><i data-lucide="${state.isRosterOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i></div>
+                                ${state.isRosterOpen ? `<textarea oninput="updateImportText(this.value)" class="w-full h-32 mt-2 p-1 border rounded text-[10px] font-mono no-scrollbar">${state.importText}</textarea><button onclick="runImport()" class="w-full bg-gray-100 mt-1 py-1 rounded font-bold text-[10px]">更新</button>` : ''}
+                            </section>
+                            <div class="text-[11px] space-y-2 mt-4">
+                                <div class="flex items-center justify-between">横幅 <div class="flex items-center gap-2"><button onclick="updateCols(${state.cols-1})" class="bg-gray-100 w-6 rounded">-</button><span>${state.cols}</span><button onclick="updateCols(${state.cols+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
+                                <div class="flex items-center justify-between">縦幅 <div class="flex items-center gap-2"><button onclick="updateRows(${state.rows-1})" class="bg-gray-100 w-6 rounded">-</button><span>${state.rows}</span><button onclick="updateRows(${state.rows+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
+                                <button onclick="toggleBlackboard()" class="w-full bg-white border py-1 rounded text-gray-500 mt-2 text-[10px]">黒板の上下を切り替え</button>
+                            </div>
+                        </div>
+                    </aside>
+                    <main class="flex-1 overflow-auto flex flex-col items-center p-4 bg-gray-100 pb-[120px]">
                         <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-2 rounded-xl">
-                            ${state.blackboardPosition === 'top' ? renderBlackboard('top') : ''}
-                            ${seatGridHtml}
-                            ${state.blackboardPosition === 'bottom' ? renderBlackboard('bottom') : ''}
+                            ${state.blackboardPosition === 'top' ? renderBlackboard('top') + gridHtml : gridHtml + renderBlackboard('bottom')}
                         </div>
                     </main>
                 </div>
                 ${state.showSaveMenu ? `<div class="fixed inset-0 z-40" onclick="toggleSaveMenu()"></div>` : ''}`;
         }
 
-        function renderStudent() {
+        function renderStudent(container) {
             const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
+            const controlsVisible = state.isStudentControlsVisible ? '' : 'hidden';
             const controls = `
-                <div class="fixed bottom-4 left-0 right-0 flex justify-center items-center z-50 transition-all ${state.isStudentControlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}">
-                    <div class="bg-black/60 backdrop-blur-md p-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-white/20">
+                <div class="${controlsVisible} fixed bottom-4 left-0 right-0 flex justify-center items-center z-50">
+                    <div class="bg-black/70 backdrop-blur-md p-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-white/20">
                         <button onclick="setMode('teacher')" class="px-4 py-2 bg-white/10 text-white rounded-xl font-bold text-sm">設定</button>
                         <button onclick="toggleBlackboard()" class="px-4 py-2 bg-white/10 text-white rounded-xl font-bold text-sm">黒板切替</button>
                         <button onclick="toggleSound()" class="p-2 bg-white/10 text-white rounded-full"><i data-lucide="${state.isSoundEnabled?'volume-2':'volume-x'}"></i></button>
-                        <div class="w-px h-8 bg-white/20 mx-2"></div>
-                        <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling?'disabled':''} class="bg-indigo-500 text-white px-6 py-2 rounded-xl font-bold shadow-lg flex items-center gap-2 active:scale-95 transition-all text-sm"><i data-lucide="shuffle" class="w-4 h-4"></i> 席替え</button>
-                        <button onclick="drumRollReveal()" ${state.isShuffling?'disabled':''} class="bg-yellow-500 text-black px-6 py-2 rounded-xl font-bold shadow-lg active:scale-95 text-sm">公開</button>
-                        <button onclick="revealAll()" ${state.isShuffling?'disabled':''} class="bg-green-500 text-white px-8 py-2 rounded-xl font-bold shadow-lg active:scale-95 text-sm">一斉</button>
+                        <div class="w-px h-8 bg-white/20"></div>
+                        <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling?'disabled':''} class="bg-indigo-500 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 text-sm"><i data-lucide="shuffle" class="w-4 h-4"></i> 席替え</button>
+                        <button onclick="drumRollReveal()" ${state.isShuffling?'disabled':''} class="bg-yellow-500 text-black px-6 py-2 rounded-xl font-bold text-sm">公開</button>
+                        <button onclick="revealAll()" ${state.isShuffling?'disabled':''} class="bg-green-500 text-white px-8 py-2 rounded-xl font-bold text-sm">一斉</button>
                         <button onclick="toggleControls(false)" class="p-2 bg-white/10 text-white rounded-full"><i data-lucide="x"></i></button>
                     </div>
                 </div>
@@ -395,38 +438,32 @@
 
             let gridCells = '';
             displayIndices.forEach(i => {
-                const sId = state.seats[i];
-                const student = sId ? getStudent(sId) : null;
+                const student = getStudent(state.seats[i]);
                 const isRev = state.revealState[i];
-                const attr = state.seatAttributes[i];
-
-                if (!student && (attr === 'EMPTY' || !sId)) {
+                if (!student && (state.seatAttributes[i] === 'EMPTY' || !state.seats[i])) {
                     gridCells += `<div class="rounded border border-white/5 bg-black/10 flex items-center justify-center opacity-30" style="width: 120px; height: 60px;">×</div>`;
                     return;
                 }
-
-                let anim = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*400}px, ${(Math.random()-0.5)*400}px) rotate(${(Math.random()-0.5)*360}deg); transition: transform 0.5s; opacity: 0.5;` : '';
-
+                let anim = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*400}px, ${(Math.random()-0.5)*400}px) rotate(${(Math.random()-0.5)*360}deg); opacity: 0.5;` : '';
                 gridCells += `
                 <div onclick="studentToggleCard(${i})" class="perspective-1000 cursor-pointer" style="width: 120px; height: 60px; ${anim}">
                     <div class="relative w-full h-full transform-style-3d transition-transform duration-500 ${isRev?'rotate-y-180':''}" style="transform: ${isRev?'rotateY(180deg)':'rotateY(0deg)'};">
-                        <div class="absolute inset-0 backface-hidden bg-[#f3efe4] rounded-lg shadow-md border-b-4 border-r-4 border-gray-300 flex flex-col items-center justify-center">
-                            <span class="text-[10px] text-gray-400 font-bold">NO.</span>
-                            <span class="text-xl font-bold text-gray-400">${student?.number || '-'}</span>
+                        <div class="absolute inset-0 backface-hidden bg-[#f3efe4] rounded-lg shadow-md border-b-4 border-r-4 border-gray-300 flex flex-col items-center justify-center text-gray-400">
+                            <span class="text-[10px] font-bold">NO.</span><span class="text-xl font-bold">${student?.number || '-'}</span>
                         </div>
-                        <div class="absolute inset-0 backface-hidden rotate-y-180 rounded-lg shadow-md border-b-4 border-r-4 ${student?.gender==='M'?'bg-blue-100 border-blue-200':'bg-pink-100 border-pink-200'} flex items-center justify-center" style="transform: rotateY(180deg); backface-visibility: hidden;">
-                            ${student ? `<span class="absolute top-1 left-2 text-[10px] font-bold opacity-30">${student.number}</span><div class="text-[13px] font-bold text-gray-800 text-center px-1">${student.name}</div>` : ''}
+                        <div class="absolute inset-0 backface-hidden rotate-y-180 rounded-lg shadow-md border-b-4 border-r-4 ${student?.gender==='M'?'bg-blue-100':'bg-pink-100'} flex items-center justify-center text-gray-800" style="transform: rotateY(180deg); backface-visibility: hidden;">
+                            ${student ? `<span class="absolute top-1 left-2 text-[10px] font-bold opacity-30">${student.number}</span><div class="text-[13px] font-bold text-center px-1">${student.name}</div>` : ''}
                         </div>
                     </div>
                 </div>`;
             });
 
-            const gridHtml = `<div class="grid gap-2 p-2 justify-center content-center" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${gridCells}</div>`;
+            const gridHtml = `<div class="grid gap-2 p-4 justify-center content-center" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${gridCells}</div>`;
 
-            return `
+            container.innerHTML = `
                 <div class="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans p-4">
-                    <div class="absolute inset-0 pointer-events-none opacity-5" style="background-image: radial-gradient(circle, #ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
-                    <div class="flex-1 w-full flex flex-col items-center justify-center z-10 overflow-y-auto no-scrollbar pb-[100px]">
+                    <div class="absolute inset-0 opacity-5" style="background-image: radial-gradient(circle, #ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
+                    <div class="flex-1 w-full flex flex-col items-center justify-center z-10 overflow-auto no-scrollbar pb-[120px]">
                         ${state.blackboardPosition === 'top' ? renderBlackboard('top') + gridHtml : gridHtml + renderBlackboard('bottom')}
                     </div>
                     ${controls}
@@ -435,33 +472,29 @@
 
         function renderToolButton(tool, icon, label, activeClass, textIcon = '') {
             const active = state.activeTool === tool;
-            return `<button onclick="setActiveTool('${tool}')" class="p-2 rounded flex flex-col items-center justify-center gap-1 w-full border ${active ? activeClass : 'bg-white text-gray-400 border-gray-200'}"><span class="text-[10px] font-bold">${textIcon}</span>${label}</button>`;
+            return `<button onclick="setActiveTool('${tool}')" class="p-2 rounded flex flex-col items-center justify-center gap-1 w-full border ${active ? activeClass : 'bg-white text-gray-400 border-gray-200'} text-[10px]"><span>${textIcon}</span>${label}</button>`;
         }
 
         function renderModal() {
             const content = document.getElementById('modal-content');
             if (!content || state.editingSeatIndex === null) return;
-            const i = state.editingSeatIndex, sId = state.seats[i], attr = state.seatAttributes[i];
-            const placed = new Set(state.seats.filter(id => id !== null && id !== sId));
+            const i = state.editingSeatIndex;
+            const placed = new Set(state.seats.filter(id => id !== null && id !== state.seats[i]));
             const filtered = state.students.filter(s => !placed.has(s.id) && (s.name || '').includes(state.searchQuery));
-
-            let listHtml = '';
-            filtered.forEach(s => {
-                listHtml += `
+            let listHtml = filtered.map(s => `
                 <button onclick="editSeat('SET_STUDENT', '${s.id}')" class="w-full p-3 text-left flex justify-between items-center hover:bg-indigo-50 border-b text-sm">
-                    <div class="flex items-center gap-3"><span class="text-gray-400 font-mono w-6">${s.number}</span><span class="font-bold">${s.name}</span></div>
+                    <div class="flex items-center gap-3"><span class="text-gray-400 w-6">${s.number}</span><span class="font-bold">${s.name}</span></div>
                     <span class="px-2 py-0.5 rounded text-[10px] font-bold ${s.gender==='M'?'bg-blue-100 text-blue-600':'bg-pink-100 text-pink-600'}">${s.gender==='M'?'男':'女'}</span>
-                </button>`;
-            });
+                </button>`).join('');
 
             content.innerHTML = `
-                <div class="p-4 border-b bg-gray-50 flex justify-between items-center"><h3 class="font-bold">座席 No.${i + 1} の設定</h3><button onclick="closeModal()"><i data-lucide="x"></i></button></div>
+                <div class="p-4 border-b bg-gray-50 flex justify-between items-center font-bold">座席 No.${i + 1} の設定<button onclick="closeModal()"><i data-lucide="x"></i></button></div>
                 <div class="p-4 space-y-4 overflow-y-auto no-scrollbar">
                     <div class="grid grid-cols-2 gap-2">
-                        <button onclick="editSeat('SET_ATTRIBUTE', 'EMPTY')" class="p-3 border rounded-xl text-[11px] font-bold ${attr==='EMPTY'?'bg-gray-800 text-white':'bg-white'}">空席にする</button>
-                        <button onclick="editSeat('SET_ATTRIBUTE', null)" class="p-3 border rounded-xl text-[11px] font-bold ${!attr && !state.lockedSeats[i]?'bg-indigo-600 text-white':'bg-white'}">指定なし</button>
+                        <button onclick="editSeat('SET_ATTRIBUTE', 'EMPTY')" class="p-3 border rounded-xl text-xs font-bold ${state.seatAttributes[i]==='EMPTY'?'bg-gray-800 text-white':'bg-white'}">空席にする</button>
+                        <button onclick="editSeat('SET_ATTRIBUTE', null)" class="p-3 border rounded-xl text-xs font-bold ${!state.seatAttributes[i] && !state.lockedSeats[i]?'bg-indigo-600 text-white':'bg-white'}">指定なし</button>
                     </div>
-                    <div class="relative"><i data-lucide="search" class="absolute left-3 top-3 w-4 h-4 text-gray-400"></i><input type="text" placeholder="名前や番号で検索..." class="w-full pl-10 p-3 border rounded-xl text-sm" value="${state.searchQuery}" oninput="updateSearchQuery(this.value)"></div>
+                    <input type="text" placeholder="名前検索..." class="w-full p-3 border rounded-xl text-sm" value="${state.searchQuery}" oninput="updateSearchQuery(this.value)">
                     <div class="max-h-60 overflow-y-auto border rounded-xl divide-y no-scrollbar">${listHtml}</div>
                 </div>`;
             lucide.createIcons();
