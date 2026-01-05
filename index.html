@@ -3,147 +3,145 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>席替えくん2026</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <title>席替えくん26</title>
     <style>
-        body { margin: 0; background-color: #f3f4f6; -webkit-tap-highlight-color: transparent; }
-        #root { min-height: 100vh; }
-        .preserve-3d { transform-style: preserve-3d; }
-        .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
-        .rotate-y-180 { transform: rotateY(180deg); }
+        body { font-family: sans-serif; background-color: #2b3a42; color: #fff; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; -webkit-tap-highlight-color: transparent; }
+        header { background: #fff; color: #333; width: 100%; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; box-sizing: border-box; }
+        .blackboard { width: 80%; height: 40px; background: #1a472a; border: 4px solid #5d4037; border-radius: 4px; margin: 20px 0; display: flex; align-items: center; justify-content: center; font-size: 12px; letter-spacing: 10px; color: rgba(255,255,255,0.2); font-weight: bold; }
+        .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; width: 95%; max-width: 1000px; padding-bottom: 120px; }
+        .seat { aspect-ratio: 4/3; perspective: 1000px; cursor: pointer; }
+        .card { position: relative; width: 100%; height: 100%; transition: transform 0.5s; transform-style: preserve-3d; }
+        .card.flipped { transform: rotateY(180deg); }
+        .face { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .front { background: #f0e6d2; color: #8d6e63; border: 1px dashed rgba(141,110,99,0.3); }
+        .back { transform: rotateY(180deg); background: #fff; color: #333; }
+        .back.boy { background: #dbeafe; } /* 男子：青 */
+        .back.girl { background: #fce7f3; } /* 女子：ピンク */
+        .s-name { font-size: 16px; font-weight: bold; }
+        .s-num { font-size: 10px; color: #666; margin-bottom: 2px; }
+        .footer { position: fixed; bottom: 0; width: 100%; background: rgba(0,0,0,0.8); padding: 15px; display: flex; justify-content: center; gap: 10px; backdrop-blur: 5px; z-index: 100; }
+        button { padding: 12px 24px; border-radius: 30px; border: none; font-weight: bold; cursor: pointer; font-size: 14px; }
+        .btn-shuffle { background: #4f46e5; color: #fff; }
+        .btn-reveal { background: #16a34a; color: #fff; }
+        .btn-mode { background: #eee; color: #333; font-size: 12px; padding: 5px 10px; }
     </style>
 </head>
 <body>
-    <div id="root">
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif;">
-            <div style="border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div>
-            <p style="margin-top: 20px;">iPad対応ツールを起動中...</p>
-        </div>
-    </div>
-    <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef, useCallback } = React;
+<header>
+    <div style="font-weight: bold;">座席替えツール</div>
+    <button class="btn-mode" onclick="toggleMode()" id="modeBtn">教員モードへ</button>
+</header>
 
-        // アイコン表示の不具合対策
-        const Icon = ({ name, size = 18, className = "" }) => {
-            const LucideIcon = window.lucide ? window.lucide[name] : null;
-            return LucideIcon ? <LucideIcon size={size} className={className} /> : <span style={{width:size, height:size, display:'inline-block'}}></span>;
-        };
+<div id="teacherArea" style="display:none; background:#fff; color:#333; width:90%; max-width:600px; padding:15px; border-radius:8px; margin-top:10px;">
+    <p style="font-size:12px; margin:0 0 10px 0;">名簿 (番号, 名前, 性別) ※性別に「女」を入れるとピンクになります</p>
+    <textarea id="listInput" style="width:100%; height:120px; font-size:12px;">1, 佐藤 健, 男
+2, 鈴木 愛, 女
+3, 高橋 翔, 男
+4, 田中 美咲, 女
+5, 伊藤 翼, 男
+6, 渡辺 結衣, 女
+7, 山本 蓮, 男
+8, 中村 陽菜, 女</textarea>
+    <button onclick="applyList()" style="width:100%; margin-top:10px; background:#4f46e5; color:#fff;">名簿を更新して配置</button>
+</div>
 
-        // --- 音声生成 (Web Audio API) ---
-        const useSound = () => {
-            const [audioCtx, setAudioCtx] = useState(null);
-            const [enabled, setEnabled] = useState(true);
-            useEffect(() => {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                if (AudioContext) setAudioCtx(new AudioContext());
-            }, []);
-            const playTone = useCallback((freq, type, duration, startTime = 0, vol = 0.1) => {
-                if (!audioCtx || !enabled) return;
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.type = type;
-                osc.frequency.setValueAtTime(freq, audioCtx.currentTime + startTime);
-                gain.gain.setValueAtTime(0, audioCtx.currentTime + startTime);
-                gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + startTime + 0.01);
-                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
-                osc.connect(gain); gain.connect(audioCtx.destination);
-                osc.start(audioCtx.currentTime + startTime); osc.stop(audioCtx.currentTime + startTime + duration);
-            }, [audioCtx, enabled]);
+<div class="blackboard">BLACKBOARD</div>
+<div id="grid" class="grid"></div>
 
-            return {
-                playFlip: () => playTone(1000 + Math.random() * 200, 'sine', 0.1, 0, 0.08),
-                playDrumroll: () => { if(audioCtx && enabled) for (let i = 0; i < 12; i++) playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15); },
-                playTada: () => { if(audioCtx && enabled) [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((f, i) => playTone(f, 'triangle', 1.8, i * 0.06, 0.15)); },
-                enabled, setEnabled
-            };
-        };
+<div class="footer">
+    <button class="btn-shuffle" onclick="shuffle()">シャッフル</button>
+    <button class="btn-reveal" onclick="revealAll()">一斉公開</button>
+    <button onclick="resetCards()" style="background:#666; color:#fff; border-radius:30px; border:none; padding:10px 15px;">伏せる</button>
+</div>
 
-        const INITIAL_STUDENTS = `1, 佐藤 健, 男\n2, 鈴木 愛, 女\n3, 高橋 翔, 男\n4, 田中 美咲, 女\n5, 伊藤 翼, 男\n6, 渡辺 結衣, 女\n7, 山本 蓮, 男\n8, 中村 陽菜, 女\n9, 小林 湊, 男\n10, 加藤 葵, 女`;
+<script>
+    let studentData = [];
+    let currentSeats = [];
 
-        function App() {
-            const [mode, setMode] = useState('teacher');
-            const [students, setStudents] = useState([]);
-            const [rows, setRows] = useState(8);
-            const [cols, setCols] = useState(6);
-            const [seats, setSeats] = useState([]);
-            const [revealState, setRevealState] = useState({});
-            const [isShuffling, setIsShuffling] = useState(false);
-            const { playFlip, playDrumroll, playTada, enabled: isSoundEnabled, setEnabled: setIsSoundEnabled } = useSound();
+    // 音声の代わり：ブラウザのビープ音的な演出
+    const playEffect = (freq, dur) => {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur);
+    };
 
-            useEffect(() => {
-                const list = INITIAL_STUDENTS.trim().split('\n').map((line, i) => {
-                    const p = line.split(/[,\t]/).map(s => s.trim());
-                    return { id: `s-${i}`, number: p[0], name: p[1], gender: (p[2] && p[2].includes('女')) ? 'F' : 'M' };
-                });
-                setStudents(list);
-                setSeats(new Array(rows * cols).fill(null).map((_, i) => list[i]?.id ?? null));
-            }, []);
-
-            const shuffle = () => {
-                setIsShuffling(true); playDrumroll();
-                setTimeout(() => {
-                    setSeats(prev => [...prev].sort(() => Math.random() - 0.5));
-                    setRevealState({}); setIsShuffling(false); playTada();
-                }, 1500);
-            };
-
-            return (
-                <div className="min-h-screen flex flex-col">
-                    <header className="bg-white p-4 shadow-sm flex justify-between items-center z-10">
-                        <h1 className="font-bold flex items-center gap-2 text-gray-700">
-                            <Icon name="Settings" /> 座席替え
-                        </h1>
-                        <button onClick={() => setMode(mode==='teacher'?'student':'teacher')} className="bg-teal-600 text-white px-4 py-2 rounded-lg font-bold shadow-md active:scale-95 transition-transform">
-                            {mode==='teacher' ? '生徒画面へ' : '設定へ戻る'}
-                        </button>
-                    </header>
-
-                    <main className={`flex-1 p-4 flex flex-col items-center overflow-y-auto ${mode==='student' ? 'bg-[#2b3a42]' : 'bg-gray-100'}`}>
-                        <div className="w-full max-w-4xl bg-[#1a472a] h-10 rounded border-b-8 border-[#5d4037] mb-8 flex items-center justify-center text-white/20 tracking-[1em] font-bold shadow-lg">BLACKBOARD</div>
-                        
-                        <div className="grid gap-2 w-full max-w-6xl pb-32" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-                            {seats.map((sid, i) => {
-                                const s = students.find(x => x.id === sid);
-                                const rev = revealState[i] || mode === 'teacher';
-                                return (
-                                    <div key={i} onClick={() => { if(!isShuffling) { playFlip(); setRevealState(p=>({...p, [i]:!p[i]})); } }} className="aspect-[4/3] relative" style={{ perspective: '1000px' }}>
-                                        <div className={`w-full h-full transition-all duration-500 preserve-3d shadow-md rounded-md ${rev ? '' : 'bg-[#f0e6d2]'}`} style={{ transform: rev ? 'rotateY(180deg)' : 'rotateY(0deg)', transformStyle: 'preserve-3d' }}>
-                                            <div className="absolute inset-0 flex items-center justify-center backface-hidden border border-dashed border-[#8d6e63]/20">
-                                                <span className="text-2xl font-bold text-[#8d6e63] opacity-20">{s?.number}</span>
-                                            </div>
-                                            <div className={`absolute inset-0 flex flex-col items-center justify-center backface-hidden rounded-md ${s?.gender==='M'?'bg-blue-100':'bg-pink-100'}`} style={{ transform: 'rotateY(180deg)' }}>
-                                                <span className="text-[10px] text-gray-500 mb-1">{s?.number}</span>
-                                                <span className="text-base font-bold text-gray-800">{s?.name}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        {mode === 'student' && (
-                            <div className="fixed bottom-8 flex gap-4 bg-black/50 p-4 rounded-full backdrop-blur-md shadow-2xl">
-                                <button onClick={shuffle} disabled={isShuffling} className="bg-indigo-600 text-white px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2 active:scale-95 transition-transform"><Icon name="Shuffle" size={20}/>シャッフル</button>
-                                <button onClick={() => { playTada(); const ns={}; seats.forEach((_,i)=>ns[i]=true); setRevealState(ns); }} className="bg-green-600 text-white px-6 py-3 rounded-full font-bold shadow-lg active:scale-95 transition-transform">一斉公開</button>
-                            </div>
-                        )}
-                    </main>
-                </div>
-            );
+    function toggleMode() {
+        const area = document.getElementById('teacherArea');
+        const btn = document.getElementById('modeBtn');
+        if (area.style.display === 'none') {
+            area.style.display = 'block';
+            btn.innerText = '設定を閉じる';
+        } else {
+            area.style.display = 'none';
+            btn.innerText = '教員モードへ';
         }
+    }
 
-        // 全てのライブラリが読み込まれるのを待ってから起動
-        window.onload = () => {
-            const root = ReactDOM.createRoot(document.getElementById('root'));
-            root.render(<App />);
-        };
-    </script>
+    function applyList() {
+        const text = document.getElementById('listInput').value;
+        studentData = text.trim().split('\n').map((line, i) => {
+            const p = line.split(/[,\t]/).map(s => s.trim());
+            return { num: p[0], name: p[1] || `生徒${i+1}`, gender: p[2] === '女' ? 'girl' : 'boy' };
+        });
+        currentSeats = [...studentData];
+        render();
+    }
+
+    function shuffle() {
+        playEffect(440, 0.1);
+        let count = 0;
+        const timer = setInterval(() => {
+            currentSeats.sort(() => Math.random() - 0.5);
+            render(true);
+            count++;
+            if (count > 12) {
+                clearInterval(timer);
+                playEffect(880, 0.5);
+                render(false);
+            }
+        }, 100);
+    }
+
+    function render(isShuffling = false) {
+        const grid = document.getElementById('grid');
+        grid.innerHTML = '';
+        currentSeats.forEach((s, i) => {
+            const seat = document.createElement('div');
+            seat.className = 'seat';
+            seat.innerHTML = `
+                <div class="card ${isShuffling ? '' : ''}" id="card-${i}">
+                    <div class="face front"><span style="opacity:0.2; font-size:24px;">${s.num}</span></div>
+                    <div class="face back ${s.gender}">
+                        <div class="s-num">${s.num}</div>
+                        <div class="s-name">${s.name}</div>
+                    </div>
+                </div>
+            `;
+            seat.onclick = () => {
+                playEffect(660, 0.1);
+                document.getElementById(`card-${i}`).classList.toggle('flipped');
+            };
+            grid.appendChild(seat);
+        });
+    }
+
+    function revealAll() {
+        playEffect(1200, 0.6);
+        document.querySelectorAll('.card').forEach(c => c.classList.add('flipped'));
+    }
+
+    function resetCards() {
+        document.querySelectorAll('.card').forEach(c => c.classList.remove('flipped'));
+    }
+
+    // 起動
+    applyList();
+</script>
 </body>
 </html>
