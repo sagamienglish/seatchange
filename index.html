@@ -3,209 +3,302 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>席替えツール</title>
+    <title>席替えくん</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        :root { --bg: #2b3a42; --teacher-bg: #f3f4f6; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; overflow: hidden; -webkit-tap-highlight-color: transparent; }
-        
-        /* ヘッダー */
-        header { background: #fff; border-bottom: 1px solid #ddd; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; z-index: 100; position: relative; }
-        .btn { padding: 8px 16px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; font-size: 14px; }
-        .btn-teal { background: #0d9488; color: white; }
-        .btn-indigo { background: #4f46e5; color: white; }
-        .btn-green { background: #16a34a; color: white; }
-
-        /* レイアウト */
-        .wrapper { display: flex; height: calc(100vh - 55px); width: 100vw; }
-        aside { width: 280px; background: #fff; border-right: 1px solid #ddd; padding: 20px; overflow-y: auto; display: block; }
-        main { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; align-items: center; transition: background 0.3s; }
-        .student-mode main { background: var(--bg); }
-        .teacher-mode main { background: var(--teacher-bg); }
-
-        /* 黒板 */
-        .blackboard { width: 80%; max-width: 600px; height: 40px; background: #1a472a; border: 4px solid #5d4037; border-radius: 4px; margin-bottom: 30px; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.2); letter-spacing: 1em; font-weight: bold; font-size: 12px; flex-shrink: 0; }
-
-        /* 座席グリッド */
-        .grid { display: grid; gap: 10px; width: 100%; max-width: 1000px; }
-        .seat { aspect-ratio: 5/4; perspective: 1000px; cursor: pointer; }
-        .card { position: relative; width: 100%; height: 100%; transition: transform 0.6s; transform-style: preserve-3d; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .card.flipped { transform: rotateY(180deg); }
-        .face { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; border: 1px solid #ddd; }
-        .front { background: #f0e6d2; color: #8d6e63; }
-        .back { transform: rotateY(180deg); color: #333; font-weight: bold; }
-        .back.boy { background: #dbeafe; border-color: #bfdbfe; }
-        .back.girl { background: #fce7f3; border-color: #fbcfe8; }
-        .s-num { font-size: 10px; color: #666; margin-bottom: 2px; }
-        .s-name { font-size: 16px; text-align: center; padding: 0 5px; word-break: break-all; }
-
-        /* シャッフルアニメーション */
-        @keyframes rumble {
-            0% { transform: translate(0,0) rotate(0); }
-            25% { transform: translate(2px, -2px) rotate(1deg); }
-            50% { transform: translate(-2px, 2px) rotate(-1deg); }
-            100% { transform: translate(0,0) rotate(0); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .preserve-3d { transform-style: preserve-3d; }
+        .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+        .rotate-y-180 { transform: rotateY(180deg); }
+        @media print {
+            @page { size: landscape; margin: 5mm; }
+            .print\:hidden { display: none !important; }
         }
-        .shuffling .card { animation: rumble 0.1s infinite; opacity: 0.7; }
-
-        /* フッター */
-        .footer { position: fixed; bottom: 20px; display: flex; gap: 10px; z-index: 100; }
-        .teacher-mode aside { display: block; }
-        .student-mode aside { display: none; }
-
-        textarea { width: 100%; height: 200px; font-family: monospace; font-size: 12px; padding: 10px; box-sizing: border-box; margin-bottom: 10px; border: 1px solid #ccc; }
-        label { display: block; font-size: 12px; font-weight: bold; margin-bottom: 5px; color: #666; }
-        .input-group { margin-bottom: 15px; }
-        input[type="number"] { width: 100%; padding: 8px; box-sizing: border-box; }
     </style>
 </head>
-<body class="teacher-mode">
-
-<header>
-    <div style="font-weight: bold; color: #444;">座席替えツール</div>
-    <button class="btn btn-teal" onclick="toggleMode()" id="modeBtn">生徒画面へ</button>
-</header>
-
-<div class="wrapper" id="wrapper">
-    <aside>
-        <div class="input-group">
-            <label>名簿 (番号,名前,性別)</label>
-            <textarea id="listInput">1, 佐藤 健, 男
-2, 鈴木 愛, 女
-3, 高橋 翔, 男
-4, 田中 美咲, 女
-5, 伊藤 翼, 男
-6, 渡辺 結衣, 女
-7, 山本 蓮, 男
-8, 中村 陽菜, 女</textarea>
+<body>
+    <div id="root">
+        <div class="flex items-center justify-center h-screen font-sans">
+            <p>高度な機能を読み込み中...</p>
         </div>
-        <div class="input-group">
-            <label>レイアウト (縦×横)</label>
-            <div style="display:flex; gap:10px;">
-                <input type="number" id="rowsInput" value="8" min="1" max="10">
-                <span style="align-self:center">×</span>
-                <input type="number" id="colsInput" value="6" min="1" max="10">
-            </div>
-        </div>
-        <button class="btn btn-indigo" style="width:100%" onclick="applySettings()">設定を反映</button>
-    </aside>
+    </div>
 
-    <main id="mainArea">
-        <div class="blackboard">BLACKBOARD</div>
-        <div id="grid" class="grid"></div>
-        
-        <div class="footer" id="footerUI" style="display:none;">
-            <button class="btn btn-indigo" onclick="shuffle()">シャッフル</button>
-            <button class="btn btn-green" onclick="revealAll()">一斉公開</button>
-            <button class="btn" style="background:#666; color:white;" onclick="hideAll()">伏せる</button>
-        </div>
-    </main>
-</div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+        // Lucideアイコンの定義
+        const { Settings, Users, Shuffle, Monitor, Printer, RefreshCw, Grid, Lock, Unlock, ArrowUpDown, Volume2, VolumeX, User, UserX, CheckCircle, XCircle, MousePointer2, PaintBucket, Link: LinkIcon, AlertCircle, Download, FileText, Image: ImageIcon } = lucide;
 
-<script>
-    let students = [];
-    let currentLayout = [];
-    let isTeacherMode = true;
+        // --- 音声生成 (オシャレ版) ---
+        const useSound = () => {
+            const [audioCtx, setAudioCtx] = useState(null);
+            const [enabled, setEnabled] = useState(true);
+            useEffect(() => {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) setAudioCtx(new AudioContext());
+            }, []);
+            const playTone = useCallback((freq, type, duration, startTime = 0, vol = 0.1) => {
+                if (!audioCtx || !enabled) return;
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime + startTime);
+                gain.gain.setValueAtTime(0, audioCtx.currentTime + startTime);
+                gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + startTime + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime + startTime);
+                osc.stop(audioCtx.currentTime + startTime + duration);
+            }, [audioCtx, enabled]);
+            return {
+                playFlip: () => playTone(1000 + Math.random() * 200, 'sine', 0.1, 0, 0.08),
+                playDrumroll: () => { if(audioCtx && enabled) for (let i = 0; i < 12; i++) playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15); },
+                playTada: () => { if(audioCtx && enabled) [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((f, i) => playTone(f, 'triangle', 1.8, i * 0.06, 0.15)); },
+                enabled, setEnabled
+            };
+        };
 
-    // 音声
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playSound(freq, dur) {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
-        osc.start(); osc.stop(audioCtx.currentTime + dur);
-    }
+        const INITIAL_STUDENTS_TEXT = `1, 佐藤 健, 男\n2, 鈴木 愛, 女\n3, 高橋 翔, 男\n4, 田中 美咲, 女\n5, 伊藤 翼, 男\n6, 渡辺 結衣, 女\n7, 山本 蓮, 男\n8, 中村 陽菜, 女\n9, 小林 湊, 男\n10, 加藤 葵, 女\n11, 吉田 樹, 男\n12, 山田 凛, 女\n13, 佐々木 陸, 男\n14, 山口 澪, 女\n15, 松本 蒼, 男\n16, 井上 紬, 女\n17, 木村 大和, 男\n18, 林 杏奈, 女\n19, 斎藤 悠真, 男\n20, 清水 桜, 女\n21, 山崎 瑛太, 男\n22, 池田 楓, 女\n23, 橋本 朝陽, 男\n24, 阿部 菫, 女\n25, 宮本 琉生, 男\n26, 石川 陽菜, 女\n27, 中川 湊斗, 男\n28, 野口 結菜, 女\n29, 酒井 大翔, 男\n30, 村上 莉子, 女\n31, 小川 悠人, 男\n32, 長谷川 咲良, 女\n33, 岡田 陽向, 男\n34, 藤田 結衣, 女\n35, 後藤 陸, 男\n36, 近藤 陽菜, 女\n37, 石井 湊, 男\n38, 小島 葵, 女\n39, 遠藤 樹, 男\n40, 青木 凛, 女\n41, 藤井 陸, 男\n42, 西村 澪, 女\n43, 安藤 蒼, 男\n44, 辻 紬, 女\n45, 山下 大和, 男\n46, 岡本 杏奈, 女\n47, 森本 悠真, 男\n48, 今井 桜, 女`;
 
-    function toggleMode() {
-        isTeacherMode = !isTeacherMode;
-        document.body.className = isTeacherMode ? 'teacher-mode' : 'student-mode';
-        document.getElementById('modeBtn').innerText = isTeacherMode ? '生徒画面へ' : '設定へ戻る';
-        document.getElementById('footerUI').style.display = isTeacherMode ? 'none' : 'flex';
-        render();
-    }
+        function App() {
+            const [mode, setMode] = useState('teacher');
+            const [students, setStudents] = useState([]);
+            const [rows, setRows] = useState(8);
+            const [cols, setCols] = useState(6);
+            const [seats, setSeats] = useState([]);
+            const [lockedSeats, setLockedSeats] = useState({});
+            const [seatAttributes, setSeatAttributes] = useState({});
+            const [importText, setImportText] = useState(INITIAL_STUDENTS_TEXT);
+            const [importUrl, setImportUrl] = useState('');
+            const [revealState, setRevealState] = useState({});
+            const [blackboardPosition, setBlackboardPosition] = useState('top');
+            const [isShuffling, setIsShuffling] = useState(false);
+            const [activeTool, setActiveTool] = useState('CURSOR');
+            const [editingSeatIndex, setEditingSeatIndex] = useState(null);
+            const [searchQuery, setSearchQuery] = useState('');
+            const [showSaveMenu, setShowSaveMenu] = useState(false);
+            const [importError, setImportError] = useState('');
+            const captureRef = useRef(null);
+            const { playFlip, playDrumroll, playTada, enabled: isSoundEnabled, setEnabled: setIsSoundEnabled } = useSound();
 
-    function applySettings() {
-        const text = document.getElementById('listInput').value;
-        const rows = parseInt(document.getElementById('rowsInput').value);
-        const cols = parseInt(document.getElementById('colsInput').value);
-        
-        students = text.trim().split('\n').map((line, i) => {
-            const p = line.split(/[,\t]/).map(s => s.trim());
-            return { num: p[0], name: p[1] || `生徒${i+1}`, gender: (p[2] && p[2].includes('女')) ? 'girl' : 'boy' };
-        });
+            useEffect(() => { parseStudents(INITIAL_STUDENTS_TEXT); }, []);
+            useEffect(() => {
+                const size = rows * cols;
+                setSeats(prev => {
+                    const n = new Array(size).fill(null);
+                    for (let i = 0; i < Math.min(prev.length, size); i++) n[i] = prev[i];
+                    return n;
+                });
+            }, [rows, cols]);
 
-        currentLayout = [...students];
-        // 席数に合わせて調整
-        const totalSeats = rows * cols;
-        while(currentLayout.length < totalSeats) currentLayout.push(null);
-        if(currentLayout.length > totalSeats) currentLayout = currentLayout.slice(0, totalSeats);
+            const parseStudents = (text) => {
+                const lines = text.trim().split('\n');
+                const parsed = lines.map((line, i) => {
+                    const p = line.split(/[,\t]/).map(s => s.trim());
+                    return { id: `s-${i}`, number: p[0] || i + 1, name: p[1] || `生徒${i + 1}`, gender: (p[2] && p[2].includes('女')) ? 'F' : 'M' };
+                });
+                setStudents(parsed);
+            };
 
-        document.getElementById('grid').style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-        render();
-    }
+            const shuffleLogic = () => {
+                let newSeats = [...seats];
+                const lockedIds = new Set();
+                seats.forEach((sid, i) => { if(lockedSeats[i] && sid) lockedIds.add(sid); else newSeats[i] = null; });
+                let pool = students.filter(s => !lockedIds.has(s.id));
+                let boys = pool.filter(s => s.gender === 'M').sort(() => Math.random() - 0.5);
+                let girls = pool.filter(s => s.gender === 'F').sort(() => Math.random() - 0.5);
+                seats.forEach((_, i) => {
+                    if(!newSeats[i]) {
+                        if(seatAttributes[i] === 'M' && boys.length > 0) newSeats[i] = boys.pop().id;
+                        else if(seatAttributes[i] === 'F' && girls.length > 0) newSeats[i] = girls.pop().id;
+                    }
+                });
+                let remain = [...boys, ...girls].sort(() => Math.random() - 0.5);
+                seats.forEach((_, i) => { if(!newSeats[i] && seatAttributes[i] !== 'EMPTY' && remain.length > 0) newSeats[i] = remain.pop().id; });
+                setSeats(newSeats); setRevealState({});
+            };
 
-    function shuffle() {
-        document.getElementById('grid').classList.add('shuffling');
-        // ドラムロール音の擬似再現
-        let count = 0;
-        const interval = setInterval(() => {
-            playSound(150 + (count * 20), 0.1);
-            currentLayout.sort(() => Math.random() - 0.5);
-            render();
-            count++;
-            if (count > 15) {
-                clearInterval(interval);
-                document.getElementById('grid').classList.remove('shuffling');
-                playSound(880, 0.5); // ジャジャーン！
-            }
-        }, 100);
-    }
+            const handleShuffle = () => {
+                if (mode === 'student') { setIsShuffling(true); playDrumroll(); setTimeout(() => { shuffleLogic(); setIsShuffling(false); playTada(); }, 1500); }
+                else shuffleLogic();
+            };
 
-    function render() {
-        const grid = document.getElementById('grid');
-        grid.innerHTML = '';
-        currentLayout.forEach((s, i) => {
-            const seat = document.createElement('div');
-            seat.className = 'seat';
-            if (!s) {
-                seat.style.opacity = '0.2';
-                grid.appendChild(seat);
-                return;
-            }
-            seat.innerHTML = `
-                <div class="card ${isTeacherMode ? 'flipped' : ''}" id="card-${i}">
-                    <div class="face front">
-                        <span style="opacity:0.2; font-size:24px; font-weight:bold;">${s.num}</span>
-                    </div>
-                    <div class="face back ${s.gender}">
-                        <div class="s-num">${s.num}</div>
-                        <div class="s-name">${s.name}</div>
-                    </div>
-                </div>
-            `;
-            seat.onclick = () => {
-                if(!isTeacherMode) {
-                    playSound(600, 0.1);
-                    document.getElementById(`card-${i}`).classList.toggle('flipped');
+            const handleSeatInteract = (index) => {
+                if (activeTool === 'CURSOR') { setEditingSeatIndex(index); setSearchQuery(''); }
+                else if (activeTool === 'EMPTY') {
+                    const isNowEmpty = seatAttributes[index] !== 'EMPTY';
+                    setSeatAttributes(prev => ({ ...prev, [index]: isNowEmpty ? 'EMPTY' : null }));
+                    if (isNowEmpty) { setSeats(prev => { const n = [...prev]; n[index] = null; return n; }); setLockedSeats(prev => ({ ...prev, [index]: false })); }
+                } else {
+                    setSeatAttributes(prev => ({ ...prev, [index]: prev[index] === activeTool ? null : activeTool }));
+                    setLockedSeats(prev => ({ ...prev, [index]: false }));
                 }
             };
-            grid.appendChild(seat);
-        });
-    }
 
-    function revealAll() {
-        playSound(1000, 0.5);
-        document.querySelectorAll('.card').forEach(c => c.classList.add('flipped'));
-    }
+            // 保存機能 (Image/PDF)
+            const handleDownload = async (type) => {
+                setShowSaveMenu(false);
+                const canvas = await html2canvas(captureRef.current, { scale: 2, backgroundColor: '#ffffff' });
+                const imgData = canvas.toDataURL('image/png');
+                if (type === 'png') {
+                    const link = document.createElement('a');
+                    link.download = `座席表_${new Date().toLocaleDateString()}.png`;
+                    link.href = imgData; link.click();
+                } else {
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF({ orientation: 'landscape' });
+                    const pdfW = pdf.internal.pageSize.getWidth();
+                    const pdfH = pdf.internal.pageSize.getHeight();
+                    pdf.addImage(imgData, 'PNG', 10, 10, pdfW - 20, (canvas.height * (pdfW - 20)) / canvas.width);
+                    pdf.save(`座席表_${new Date().toLocaleDateString()}.pdf`);
+                }
+            };
 
-    function hideAll() {
-        document.querySelectorAll('.card').forEach(c => c.classList.remove('flipped'));
-    }
+            const Blackboard = () => (
+                <div className="w-full bg-[#1a472a] h-12 border-y-4 border-[#5d4037] mb-6 flex items-center justify-center rounded shadow-xl print:hidden relative overflow-hidden">
+                    <div className="absolute right-4 bottom-1 w-8 h-1 bg-white/20 rounded-full"></div>
+                </div>
+            );
 
-    // 初期起動
-    applySettings();
-</script>
+            return (
+                <div className="min-h-screen flex flex-col font-sans bg-gray-100 overflow-hidden">
+                    <header className="bg-white p-3 border-b flex justify-between items-center shadow-sm z-50 print:hidden">
+                        <h1 className="font-bold flex items-center gap-2 text-gray-700 text-lg"><Settings size={20}/> 教員用設定</h1>
+                        <div className="flex gap-2 relative">
+                            <button onClick={handleShuffle} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg font-bold shadow-md flex items-center gap-1 active:scale-95"><Shuffle size={16}/> 実行</button>
+                            <button onClick={() => window.print()} className="bg-gray-100 px-4 py-1.5 rounded-lg font-bold flex items-center gap-1"><Printer size={16}/> 印刷</button>
+                            <button onClick={() => setShowSaveMenu(!showSaveMenu)} className="bg-gray-100 px-4 py-1.5 rounded-lg font-bold flex items-center gap-1"><Download size={16}/> 保存</button>
+                            {showSaveMenu && (
+                                <div className="absolute top-full right-0 mt-1 bg-white border rounded shadow-xl p-1 z-50 w-32">
+                                    <button onClick={() => handleDownload('pdf')} className="w-full text-left p-2 hover:bg-gray-50 text-sm flex items-center gap-2"><FileText size={14}/>PDF保存</button>
+                                    <button onClick={() => handleDownload('png')} className="w-full text-left p-2 hover:bg-gray-50 text-sm flex items-center gap-2"><ImageIcon size={14}/>画像保存</button>
+                                </div>
+                            )}
+                            <button onClick={() => setMode('student')} className="bg-teal-600 text-white px-4 py-1.5 rounded-lg font-bold shadow-md flex items-center gap-1 active:scale-95 ml-2"><Monitor size={16}/> 生徒モード</button>
+                        </div>
+                    </header>
+
+                    <div className="flex flex-1 overflow-hidden">
+                        {mode === 'teacher' && (
+                            <aside className="w-72 bg-white border-r p-4 overflow-y-auto print:hidden flex flex-col gap-6">
+                                <section className="bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+                                    <h2 className="text-xs font-bold text-indigo-800 uppercase mb-2 flex items-center gap-1"><PaintBucket size={14}/>一括設定ツール</h2>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button onClick={() => setActiveTool('CURSOR')} className={`p-2 text-xs border rounded flex items-center justify-center gap-1 ${activeTool === 'CURSOR' ? 'bg-indigo-600 text-white shadow' : 'bg-white'}`}><MousePointer2 size={14}/>選択</button>
+                                        <button onClick={() => setActiveTool('EMPTY')} className={`p-2 text-xs border rounded flex items-center justify-center gap-1 ${activeTool === 'EMPTY' ? 'bg-gray-700 text-white shadow' : 'bg-white'}`}><UserX size={14}/>空席ペン</button>
+                                        <button onClick={() => setActiveTool('M')} className={`p-2 text-xs border rounded flex items-center justify-center gap-1 ${activeTool === 'M' ? 'bg-blue-500 text-white shadow' : 'bg-white text-blue-600'}`}>♂ 男子ペン</button>
+                                        <button onClick={() => setActiveTool('F')} className={`p-2 text-xs border rounded flex items-center justify-center gap-1 ${activeTool === 'F' ? 'bg-pink-500 text-white shadow' : 'bg-white text-pink-600'}`}>♀ 女子ペン</button>
+                                    </div>
+                                </section>
+                                <section>
+                                    <h2 className="text-xs font-bold text-gray-500 mb-2 uppercase flex items-center gap-1"><Users size={14}/>名簿管理 (48名)</h2>
+                                    <textarea className="w-full h-40 text-[10px] p-2 border font-mono bg-gray-50 rounded" value={importText} onChange={e => setImportText(e.target.value)} />
+                                    <button onClick={() => parseStudents(importText)} className="w-full bg-gray-200 py-1.5 text-xs rounded mt-1 font-bold flex items-center justify-center gap-1"><RefreshCw size={12}/>名簿更新</button>
+                                </section>
+                                <section>
+                                    <h2 className="text-xs font-bold text-gray-400 mb-1">レイアウト (縦×横)</h2>
+                                    <div className="flex gap-2">
+                                        <input type="number" value={rows} onChange={e => setRows(parseInt(e.target.value))} className="w-full border p-1 rounded text-center" />
+                                        <input type="number" value={cols} onChange={e => setCols(parseInt(e.target.value))} className="w-full border p-1 rounded text-center" />
+                                    </div>
+                                </section>
+                            </aside>
+                        )}
+
+                        <main className={`flex-1 overflow-auto p-6 flex flex-col items-center ${mode === 'student' ? 'bg-[#2b3a42]' : 'bg-gray-100'}`}>
+                            <div ref={captureRef} className="w-full max-w-5xl flex flex-col items-center">
+                                {blackboardPosition === 'top' && <Blackboard />}
+                                <div className="grid gap-3 w-full" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+                                    {seats.map((sid, i) => {
+                                        const s = students.find(x => x.id === sid);
+                                        const rev = revealState[i] || mode === 'teacher';
+                                        const attr = seatAttributes[i];
+                                        const isLocked = lockedSeats[i];
+                                        let bg = s ? (s.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100') : 'bg-white';
+                                        if (attr === 'EMPTY') bg = 'bg-gray-200';
+                                        else if (attr === 'M') bg = 'bg-blue-50 border-blue-200 border-dashed border-2';
+                                        else if (attr === 'F') bg = 'bg-pink-50 border-pink-200 border-dashed border-2';
+
+                                        return (
+                                            <div key={i} onClick={() => {
+                                                if(mode === 'teacher') handleSeatInteract(i);
+                                                else if(!isShuffling) { playFlip(); setRevealState(p => ({...p, [i]: !p[i]})); }
+                                            }} className={`aspect-[4/3] perspective-1000 cursor-pointer`}>
+                                                <div className={`w-full h-full relative preserve-3d transition-transform duration-500 ${rev ? 'rotate-y-180' : ''}`} style={{ transform: rev ? 'rotateY(180deg)' : 'none' }}>
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center backface-hidden rounded-lg bg-[#f0e6d2] border-2 border-[#8d6e63]/20 shadow-sm">
+                                                        <span className="text-3xl font-bold text-[#8d6e63] opacity-20">{s?.number}</span>
+                                                    </div>
+                                                    <div className={`absolute inset-0 flex flex-col items-center justify-center backface-hidden rotate-y-180 rounded-lg shadow-md ${bg}`} style={{ transform: 'rotateY(180deg)' }}>
+                                                        {s && (
+                                                            <>
+                                                                <span className="text-[10px] text-gray-500 mb-1">{s.number}</span>
+                                                                <span className="text-xl font-bold text-gray-800">{s.name}</span>
+                                                            </>
+                                                        )}
+                                                        {!s && attr === 'EMPTY' && <span className="text-gray-400 text-xs">空席</span>}
+                                                        {isLocked && <div className="absolute top-1 right-1"><Lock size={12} className="text-red-400" /></div>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            {mode === 'student' && (
+                                <div className="fixed bottom-10 flex gap-4 bg-black/50 p-5 rounded-full backdrop-blur-md shadow-2xl z-50">
+                                    <button onClick={() => setMode('teacher')} className="text-white opacity-60 text-xs px-2">設定へ</button>
+                                    <button onClick={() => setIsSoundEnabled(!isSoundEnabled)} className="text-white opacity-80"><Icon name={isSoundEnabled ? "Volume2" : "VolumeX"} /></button>
+                                    <button onClick={handleShuffle} disabled={isShuffling} className="bg-indigo-600 text-white px-8 py-2 rounded-full font-bold shadow-lg flex items-center gap-2 active:scale-95"><Shuffle size={20}/> シャッフル開始</button>
+                                    <button onClick={() => { playTada(); const ns={}; seats.forEach((_,i)=>ns[i]=true); setRevealState(ns); }} className="bg-green-600 text-white px-8 py-2 rounded-full font-bold shadow-lg">一斉公開</button>
+                                </div>
+                            )}
+                        </main>
+                    </div>
+
+                    {/* モーダル：座席詳細設定 */}
+                    {editingSeatIndex !== null && (
+                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]" onClick={() => setEditingSeatIndex(null)}>
+                            <div className="bg-white p-6 rounded-xl max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+                                <h3 className="font-bold text-lg mb-4 flex justify-between items-center">
+                                    座席 {editingSeatIndex + 1} の設定
+                                    <button onClick={() => setEditingSeatIndex(null)}><XCircle className="text-gray-300" /></button>
+                                </h3>
+                                <div className="grid grid-cols-2 gap-2 mb-6">
+                                    <button onClick={() => { setSeatAttributes(p => ({...p, [editingSeatIndex]: 'EMPTY'})); setSeats(prev => { const n = [...prev]; n[editingSeatIndex] = null; return n; }); setEditingSeatIndex(null); }} className="p-2 border rounded text-sm hover:bg-gray-50 flex items-center gap-2"><UserX size={14}/>空席にする</button>
+                                    <button onClick={() => { setSeatAttributes(p => ({...p, [editingSeatIndex]: null})); setEditingSeatIndex(null); }} className="p-2 border rounded text-sm hover:bg-gray-50 flex items-center gap-2"><User size={14}/>指定なし</button>
+                                </div>
+                                <div className="max-h-60 overflow-y-auto border-t pt-4">
+                                    <p className="text-xs text-gray-400 mb-2 uppercase font-bold">生徒を固定する</p>
+                                    <input type="text" placeholder="名前検索..." className="w-full p-2 border rounded mb-2 text-sm" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                                    {students.filter(s => s.name.includes(searchQuery)).map(s => (
+                                        <button key={s.id} onClick={() => {
+                                            const currentIdx = seats.indexOf(s.id);
+                                            let n = [...seats]; if(currentIdx !== -1) n[currentIdx] = null;
+                                            n[editingSeatIndex] = s.id; setSeats(n);
+                                            setLockedSeats(p => ({...p, [editingSeatIndex]: true}));
+                                            setSeatAttributes(p => ({...p, [editingSeatIndex]: null}));
+                                            setEditingSeatIndex(null);
+                                        }} className="w-full text-left p-2 border-b hover:bg-indigo-50 text-sm flex justify-between">
+                                            <span>{s.number}: {s.name}</span>
+                                            <span className={s.gender === 'M' ? 'text-blue-400' : 'text-pink-400'}>{s.gender === 'M' ? '♂' : '♀'}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
