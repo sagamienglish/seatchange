@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>席替えくん</title>
+    <title>高校席替えアプリ</title>
     
     <!-- Tailwind CSS (デザイン用) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -269,6 +269,7 @@
                 state.importText = text;
                 parseStudents(text);
                 state.importUrl = '';
+                // 名簿更新後は閉じない（確認のため）
                 initSeats(); 
             } catch (e) {
                 console.error(e);
@@ -360,6 +361,7 @@
         window.toggleBlackboard = () => { state.blackboardPosition = state.blackboardPosition === 'top' ? 'bottom' : 'top'; render(); };
         
         window.clearSeats = () => {
+            // ロックされていない席の生徒IDを削除
             state.seats = state.seats.map((studentId, i) => state.lockedSeats[i] ? studentId : null);
             state.revealState = {};
             render();
@@ -399,6 +401,7 @@
                 if (state.swapSourceIndex === null) {
                     state.swapSourceIndex = index;
                 } else {
+                    // 入れ替え処理
                     const sourceIdx = state.swapSourceIndex;
                     const targetIdx = index;
                     const temp = state.seats[sourceIdx];
@@ -498,6 +501,7 @@
 
             try {
                 if (window.html2canvas) {
+                    // 自動計算: 幅 = 列数 * 180 + 余白, 高さ = 行数 * 140 + 余白
                     const dynamicWidth = Math.max(1400, state.cols * 200 + 100);
                     const dynamicHeight = Math.max(1000, state.rows * 160 + 200);
 
@@ -511,6 +515,7 @@
                         onclone: (clonedDoc) => {
                             const el = clonedDoc.getElementById('capture-container');
                             if (el) {
+                                // 保存用スタイル適用
                                 el.style.width = `${dynamicWidth}px`;
                                 el.style.height = 'auto'; 
                                 el.style.minHeight = `${dynamicHeight}px`;
@@ -558,14 +563,25 @@
                     if (type === 'png') {
                         const fileName = `座席表.png`;
                         canvas.toBlob(async (blob) => {
-                            if (blob && navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: 'image/png' })] })) {
-                                try { await navigator.share({ files: [new File([blob], fileName, { type: 'image/png' })], title: '座席表' }); return; } catch (err) {}
+                            if (!blob) return;
+                            // iPad等での共有ダイアログ優先
+                            if (navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: 'image/png' })] })) {
+                                try { 
+                                    await navigator.share({ 
+                                        files: [new File([blob], fileName, { type: 'image/png' })], 
+                                        title: '座席表' 
+                                    }); 
+                                    return; 
+                                } catch (err) {
+                                    console.log("Share cancelled or failed", err);
+                                }
                             }
+                            // 共有不可・キャンセルの場合はダウンロード
                             const link = document.createElement('a');
                             link.download = fileName;
                             link.href = canvas.toDataURL();
                             link.click();
-                        });
+                        }, 'image/png');
                     } else if (type === 'pdf' && window.jspdf) {
                         const imgData = canvas.toDataURL('image/png');
                         const { jsPDF } = window.jspdf;
@@ -580,7 +596,7 @@
                 }
             } catch (e) {
                 console.error(e);
-                alert("保存に失敗しました。");
+                alert("保存処理中にエラーが発生しました。");
             }
         };
 
@@ -604,16 +620,16 @@
             const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
+            // ヘッダー (タイトル変更、イラスト削除)
             const header = `
                 <header class="w-full h-14 bg-white border-b px-4 flex justify-between items-center shadow-sm shrink-0 print:hidden z-30">
                     <div class="flex items-center gap-2">
                         <h1 class="font-bold text-gray-700 text-base md:text-lg flex items-center gap-2">
                             席替えくん 
-                            <!-- ここにイラストのURLを入れてください。例: src="https://example.com/icon.png" -->
-                            <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM0QjU1NjMiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMyAyMXYtOCIvPjxwYXRoIGQ9Ik0zIDEwVjUiLz48cGF0aCBkPSJNMjEgMTB1LThhMiAyIDAgMCAwLTIgMmwtMS41IDciLz48cGF0aCBkPSJNMjEgMjF2LThhMiAyIDAgMCAwLTItMmwtMS41IDciLz48cGF0aCBkPSJNMCAyMWgyNCIvPjwvc3ZnPg==" class="h-6 w-auto opacity-80" alt="School Icon" />
                         </h1>
                     </div>
                     <div class="flex gap-2">
+                        <!-- PC用生徒モードボタン -->
                         <button onclick="setMode('student')" class="hidden md:flex items-center gap-1 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="monitor" class="w-4 h-4"></i> 生徒モード</button>
                     </div>
                     <div class="flex gap-1 md:hidden">
@@ -627,6 +643,7 @@
                 </header>
             `;
 
+            // サイドバー (幅可変)
             const sidebarWidth = state.isSidebarCollapsed ? 'w-16' : 'w-full md:w-64';
             const hideWhenCollapsed = state.isSidebarCollapsed ? 'hidden' : '';
             const btnClassNormal = 'flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white px-2 py-1.5 rounded font-bold shadow-sm text-xs w-full';
@@ -715,7 +732,6 @@
 
             // メインエリア (スクロール可 + 座席サイズ120x60)
             const blackboardTop = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
-            // 黒板が下の時はチョーク位置（重力）を考慮して上側に配置
             const blackboardBottom = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mt-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute top-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
 
             let gridCells = '';
@@ -743,8 +759,6 @@
                 if (!isSwapping) {
                     if (student) {
                         bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
-                        // 席替え実行後はロック枠線を消すが、内部データはlockedのまま
-                        // ここでロックの視覚表示は行わない（ご要望）
                     } else {
                         if (isLocked) { bgColor = 'bg-white'; ringColor = 'ring-1 ring-red-400'; }
                         else if (attr === 'EMPTY') { bgColor = 'bg-gray-200'; }
@@ -764,38 +778,35 @@
                 }
 
                 let icons = '';
-                // 生徒がいない時だけアイコンを表示
                 if (!student) {
                     if (isLocked) icons += `<i data-lucide="lock" class="w-2 h-2 text-red-500"></i>`;
                     if (attr === 'M') icons += `<span class="text-[8px] font-bold text-blue-500">♂</span>`;
                     if (attr === 'F') icons += `<span class="text-[8px] font-bold text-pink-500">♀</span>`;
                 }
 
-                // 固定サイズ (120px x 60px)
+                // スマホ・タブレットで幅に合わせつつ上限固定
+                const cellWidth = `min(120px, ${(100/state.cols).toFixed(2)}vw - 8px)`;
+
                 gridCells += `
-                    <div onclick="handleSeatClick(${i})" class="seat-cell rounded border shadow-sm flex flex-col items-center justify-center cursor-pointer relative group border-gray-300 hover:border-gray-500 ${bgColor} ${ringColor} print:border-gray-800 print:shadow-none print:ring-0 overflow-hidden" style="${style}">
+                    <div onclick="handleSeatClick(${i})" class="seat-cell rounded border shadow-sm flex flex-col items-center justify-center cursor-pointer relative group border-gray-300 hover:border-gray-500 ${bgColor} ${ringColor} print:border-gray-800 print:shadow-none print:ring-0 overflow-hidden" style="${style} width: ${cellWidth}; height: 60px;">
                         <div class="absolute top-0.5 left-0.5 flex gap-0.5 z-10">${icons}</div>
                         ${content}
                     </div>
                 `;
             });
 
-            // メインエリアのflex-colの方向を黒板位置に合わせて制御
-            const flexDir = state.blackboardPosition === 'top' ? 'flex-col' : 'flex-col-reverse justify-end';
+            const mainContentHtml = state.blackboardPosition === 'top' 
+                ? `${blackboardTop}<div class="seat-grid flex flex-wrap gap-1 justify-center max-w-full">${gridCells}</div>`
+                : `<div class="seat-grid flex flex-wrap gap-1 justify-center max-w-full">${gridCells}</div>${blackboardBottom}`;
 
             return `
                 <div class="flex flex-col h-full w-full bg-gray-100">
                     ${header}
                     <div class="flex flex-1 overflow-hidden flex-col md:flex-row">
                         ${sidebar}
-                        <main class="flex-1 p-2 overflow-y-auto flex ${flexDir} items-center min-h-0 pb-[100px] pt-4">
+                        <main class="flex-1 p-2 overflow-y-auto flex flex-col items-center min-h-0 pb-[100px] pt-4">
                             <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-auto h-auto min-h-full">
-                                ${state.blackboardPosition === 'top' ? blackboardTop : ''}
-                                <div class="seat-grid grid gap-1 p-1 bg-white rounded-lg shadow-inner" 
-                                     style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">
-                                    ${gridCells}
-                                </div>
-                                ${state.blackboardPosition === 'bottom' ? blackboardBottom : ''}
+                                ${mainContentHtml}
                             </div>
                         </main>
                     </div>
@@ -837,7 +848,7 @@
                 const attr = state.seatAttributes[i];
 
                 if (!student && (attr === 'EMPTY' || !studentId)) {
-                    gridCells += `<div class="border-2 border-dashed border-white/5 rounded flex items-center justify-center opacity-50"><span class="text-white/20 text-xs">×</span></div>`;
+                    gridCells += `<div class="border-2 border-dashed border-white/5 rounded flex items-center justify-center opacity-50 aspect-[3/2]"><span class="text-white/20 text-xs">×</span></div>`;
                     return;
                 }
 
@@ -871,7 +882,7 @@
                 const rotateClass = (isRevealed && !state.isShuffling) ? 'rotateY(180deg)' : 'rotateY(0deg)';
 
                 gridCells += `
-                    <div onclick="studentToggleCard(${i})" class="perspective-1000 cursor-pointer group relative w-full h-full" style="perspective: 1000px; ${style}">
+                    <div onclick="studentToggleCard(${i})" class="perspective-1000 cursor-pointer group relative w-full h-full aspect-[3/2]" style="perspective: 1000px; ${style}">
                         <div class="relative w-full h-full transition-all duration-500 transform-style-3d" style="transform: ${rotateClass};">
                             ${faceFront}
                             ${faceBack}
@@ -880,18 +891,17 @@
                 `;
             });
 
-            // Flex-directionの制御 (Top: flex-col, Bottom: flex-col-reverse)
-            const flexDir = state.blackboardPosition === 'top' ? 'flex-col' : 'flex-col-reverse justify-end';
+            // 生徒モードのDOM順序
+            const gridHtml = `<div class="grid gap-1 md:gap-2 w-full h-full flex-1" style="grid-template-columns: repeat(${state.cols}, minmax(0, 1fr)); grid-template-rows: repeat(${state.rows}, minmax(0, 1fr));">${gridCells}</div>`;
+            const mainContentHtml = state.blackboardPosition === 'top' 
+                ? `${blackboardTop}${gridHtml}`
+                : `${gridHtml}${blackboardBottom}`;
 
             return `
                 <div class="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans">
                     <div class="absolute inset-0 pointer-events-none opacity-10 bg-repeat" style="background-image: radial-gradient(circle, #ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
-                    <div class="flex-1 w-full p-1 md:p-2 flex ${flexDir} items-center justify-center overflow-hidden z-10 pb-[100px]">
-                        ${state.blackboardPosition === 'top' ? blackboardTop : ''}
-                        <div class="grid gap-1 md:gap-2 w-full h-full flex-1" style="grid-template-columns: repeat(${state.cols}, minmax(0, 1fr)); grid-template-rows: repeat(${state.rows}, minmax(0, 1fr));">
-                            ${gridCells}
-                        </div>
-                        ${state.blackboardPosition === 'bottom' ? blackboardBottom : ''}
+                    <div class="flex-1 w-full p-1 md:p-2 flex flex-col items-center justify-center overflow-hidden z-10 pb-[100px]">
+                        ${mainContentHtml}
                     </div>
                     ${controls}
                 </div>
@@ -964,7 +974,7 @@
         // 初期化
         window.onload = () => {
             parseStudents(INITIAL_STUDENTS_TEXT);
-            initSeats(); // 重要：初期座席作成
+            initSeats(); 
         };
 
     </script>
