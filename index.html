@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>高校席替えアプリ</title>
+    <title>席替えくん</title>
     
     <!-- Tailwind CSS (デザイン用) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -50,7 +50,7 @@
 <body class="bg-gray-100 text-gray-800 font-sans h-screen overflow-hidden flex flex-col">
 
     <!-- アプリのルート要素 -->
-    <div id="app" class="h-full w-full flex flex-col md:flex-row overflow-hidden">
+    <div id="app" class="h-full w-full overflow-hidden">
         <!-- ここにJSでコンテンツを描画します -->
     </div>
 
@@ -604,11 +604,17 @@
             const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
-            // サイドバー
-            const sidebar = `
-            <aside class="w-full md:w-64 bg-white border-b md:border-r md:border-b-0 p-2 overflow-y-auto print:hidden shadow-inner flex flex-col gap-2 shrink-0 h-auto md:h-full max-h-[40vh] md:max-h-full z-20">
-                <div class="flex justify-between items-center">
-                    <h1 class="font-bold flex items-center text-gray-700 text-sm md:text-base"><i data-lucide="settings" class="mr-1 w-4 h-4"></i> <span class="hidden md:inline">設定</span><span class="md:hidden">設定</span></h1>
+            // ヘッダー
+            const header = `
+                <header class="w-full h-14 bg-white border-b px-4 flex justify-between items-center shadow-sm shrink-0 print:hidden z-30">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="settings" class="text-gray-700 w-5 h-5"></i>
+                        <h1 class="font-bold text-gray-700 text-base md:text-lg">高校席替えアプリ（教員用設定）</h1>
+                    </div>
+                    <div class="flex gap-2">
+                        <!-- PC用生徒モードボタン -->
+                        <button onclick="setMode('student')" class="hidden md:flex items-center gap-1 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="monitor" class="w-4 h-4"></i> 生徒モード</button>
+                    </div>
                     <div class="flex gap-1 md:hidden">
                         <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="p-1.5 bg-indigo-600 text-white rounded disabled:opacity-50"><i data-lucide="shuffle" class="w-3.5 h-3.5"></i></button>
                         <button onclick="toggleSaveMenu()" class="p-1.5 bg-gray-200 text-gray-700 rounded relative">
@@ -617,8 +623,12 @@
                         </button>
                         <button onclick="setMode('student')" class="p-1.5 bg-teal-600 text-white rounded"><i data-lucide="monitor" class="w-3.5 h-3.5"></i></button>
                     </div>
-                </div>
+                </header>
+            `;
 
+            // サイドバー
+            const sidebar = `
+            <aside class="w-full md:w-64 bg-white border-b md:border-r md:border-b-0 p-2 overflow-y-auto print:hidden shadow-inner flex flex-col gap-2 shrink-0 h-auto md:h-full max-h-[40vh] md:max-h-full z-20">
                 <div class="hidden md:flex flex-col gap-2">
                     <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white px-2 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="shuffle" class="w-3.5 h-3.5"></i> 席替え実行</button>
                     <button onclick="clearSeats()" class="flex items-center justify-center gap-1 bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="eraser" class="w-3.5 h-3.5"></i> クリア</button>
@@ -629,7 +639,6 @@
                             ${state.showSaveMenu ? renderSaveMenu() : ''}
                         </div>
                     </div>
-                    <button onclick="setMode('student')" class="flex items-center justify-center gap-1 bg-teal-600 hover:bg-teal-700 text-white px-2 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="monitor" class="w-3.5 h-3.5"></i> 生徒モード</button>
                 </div>
 
                 <section class="bg-indigo-50 p-2 rounded border border-indigo-100 text-xs">
@@ -742,7 +751,7 @@
                     if (attr === 'F') icons += `<span class="text-[8px] font-bold text-pink-500">♀</span>`;
                 }
 
-                // サイズ固定 (120px x 60px)
+                // 固定サイズ (120px x 60px)
                 gridCells += `
                     <div onclick="handleSeatClick(${i})" class="seat-cell rounded border shadow-sm flex flex-col items-center justify-center cursor-pointer relative group border-gray-300 hover:border-gray-500 ${bgColor} ${ringColor} print:border-gray-800 print:shadow-none print:ring-0 overflow-hidden" style="${style}">
                         <div class="absolute top-0.5 left-0.5 flex gap-0.5 z-10">${icons}</div>
@@ -755,17 +764,22 @@
             const flexDir = state.blackboardPosition === 'top' ? 'flex-col' : 'flex-col-reverse justify-end';
 
             return `
-                ${sidebar}
-                <main class="flex-1 bg-gray-100 p-2 overflow-y-auto flex ${flexDir} items-center min-h-0 pb-[100px]">
-                    <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-auto h-auto">
-                        ${state.blackboardPosition === 'top' ? blackboardTop : ''}
-                        <div class="seat-grid grid gap-1 p-1 bg-white rounded-lg shadow-inner" 
-                             style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">
-                            ${gridCells}
-                        </div>
-                        ${state.blackboardPosition === 'bottom' ? blackboardBottom : ''}
+                <div class="flex flex-col h-full w-full bg-gray-100">
+                    ${header}
+                    <div class="flex flex-1 overflow-hidden flex-col md:flex-row">
+                        ${sidebar}
+                        <main class="flex-1 p-2 overflow-y-auto flex ${flexDir} items-center min-h-0 pb-[100px] pt-[120px]">
+                            <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-auto h-auto min-h-full">
+                                ${state.blackboardPosition === 'top' ? blackboardTop : ''}
+                                <div class="seat-grid grid gap-1 p-1 bg-white rounded-lg shadow-inner" 
+                                     style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">
+                                    ${gridCells}
+                                </div>
+                                ${state.blackboardPosition === 'bottom' ? blackboardBottom : ''}
+                            </div>
+                        </main>
                     </div>
-                </main>
+                </div>
             `;
         }
 
