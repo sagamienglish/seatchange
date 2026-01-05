@@ -4,35 +4,38 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>座席替えツール</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { margin: 0; background-color: #f3f4f6; }
+        #root { min-height: 100vh; }
+        .backface-hidden { backface-visibility: hidden; }
+    </style>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root">読み込み中...（しばらくお待ちください）</div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
         
-        // LucideアイコンをReactコンポーネントとして定義
-        const { Settings, Users, Shuffle, Monitor, Printer, RefreshCw, Grid, Lock, Unlock, ArrowUpDown, Volume2, VolumeX, User, UserX, CheckCircle, XCircle, MousePointer2, PaintBucket, Link, AlertCircle, Download, FileText, Image: ImageIcon } = lucide;
-        const LinkIcon = Link;
+        // アイコンの定義
+        const { 
+            Settings, Users, Shuffle, Monitor, Printer, RefreshCw, Grid, Lock, Unlock, 
+            ArrowUpDown, Volume2, VolumeX, User, UserX, CheckCircle, XCircle, 
+            MousePointer2, PaintBucket, Link, AlertCircle, Download, FileText, Image: ImageIcon 
+        } = lucide;
 
-        // --- Web Audio API ---
+        // --- 音声機能 ---
         const useSound = () => {
           const [audioCtx, setAudioCtx] = useState(null);
           const [enabled, setEnabled] = useState(true);
-
           useEffect(() => {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
-            if (AudioContext) {
-              const ctx = new AudioContext();
-              setAudioCtx(ctx);
-            }
+            if (AudioContext) setAudioCtx(new AudioContext());
           }, []);
-
           const playTone = useCallback((freq, type, duration, startTime = 0, vol = 0.1) => {
             if (!audioCtx || !enabled) return;
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -43,77 +46,18 @@
             gain.gain.setValueAtTime(0, audioCtx.currentTime + startTime);
             gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + startTime + 0.01);
             gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.start(audioCtx.currentTime + startTime);
-            osc.stop(audioCtx.currentTime + startTime + duration);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime + startTime); osc.stop(audioCtx.currentTime + startTime + duration);
           }, [audioCtx, enabled]);
-
-          const playFlip = () => playTone(1000 + Math.random() * 200, 'sine', 0.1, 0, 0.08);
-          const playDrumroll = () => {
-            if (!audioCtx || !enabled) return;
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            for (let i = 0; i < 12; i++) playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15);
+          return { 
+            playFlip: () => playTone(1000 + Math.random() * 200, 'sine', 0.1, 0, 0.08),
+            playDrumroll: () => { if(audioCtx && enabled) for (let i = 0; i < 12; i++) playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15); },
+            playTada: () => { if(audioCtx && enabled) [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((f, i) => playTone(f, 'triangle', 1.8, i * 0.06, 0.15)); },
+            enabled, setEnabled 
           };
-          const playTada = () => {
-            if (!audioCtx || !enabled) return;
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((freq, i) => {
-                playTone(freq, 'triangle', 1.8, i * 0.06, 0.15);
-                playTone(freq * 2, 'sine', 1.2, i * 0.06, 0.05);
-            });
-          };
-          return { playFlip, playDrumroll, playTada, enabled, setEnabled };
         };
 
-        const INITIAL_STUDENTS_TEXT = `1, 佐藤 健, 男
-2, 鈴木 愛, 女
-3, 高橋 翔, 男
-4, 田中 美咲, 女
-5, 伊藤 翼, 男
-6, 渡辺 結衣, 女
-7, 山本 蓮, 男
-8, 中村 陽菜, 女
-9, 小林 湊, 男
-10, 加藤 葵, 女
-11, 吉田 樹, 男
-12, 山田 凛, 女
-13, 佐々木 陸, 男
-14, 山口 澪, 女
-15, 松本 蒼, 男
-16, 井上 紬, 女
-17, 木村 大和, 男
-18, 林 杏奈, 女
-19, 斎藤 悠真, 男
-20, 清水 桜, 女
-21, 山崎 瑛太, 男
-22, 池田 楓, 女
-23, 橋本 朝陽, 男
-24, 阿部 菫, 女
-25, 宮本 琉生, 男
-26, 石川 陽菜, 女
-27, 中川 湊斗, 男
-28, 野口 結菜, 女
-29, 酒井 大翔, 男
-30, 村上 莉子, 女
-31, 小川 悠人, 男
-32, 長谷川 咲良, 女
-33, 岡田 陽向, 男
-34, 藤田 結衣, 女
-35, 後藤 陸, 男
-36, 近藤 陽菜, 女
-37, 石井 湊, 男
-38, 小島 葵, 女
-39, 遠藤 樹, 男
-40, 青木 凛, 女
-41, 藤井 陸, 男
-42, 西村 澪, 女
-43, 安藤 蒼, 男
-44, 辻 紬, 女
-45, 山下 大和, 男
-46, 岡本 杏奈, 女
-47, 森本 悠真, 男
-48, 今井 桜, 女`;
+        const INITIAL_TEXT = `1, 佐藤 健, 男\n2, 鈴木 愛, 女\n3, 高橋 翔, 男\n4, 田中 美咲, 女\n5, 伊藤 翼, 男\n6, 渡辺 結衣, 女\n7, 山本 蓮, 男\n8, 中村 陽菜, 女\n9, 小林 湊, 男\n10, 加藤 葵, 女\n11, 吉田 樹, 男\n12, 山田 凛, 女\n13, 佐々木 陸, 男\n14, 山口 澪, 女\n15, 松本 蒼, 男\n16, 井上 紬, 女\n17, 木村 大和, 男\n18, 林 杏奈, 女\n19, 斎藤 悠真, 男\n20, 清水 桜, 女\n21, 山崎 瑛太, 男\n22, 池田 楓, 女\n23, 橋本 朝陽, 男\n24, 阿部 菫, 女\n25, 宮本 琉生, 男\n26, 石川 陽菜, 女\n27, 中川 湊斗, 男\n28, 野口 結菜, 女\n29, 酒井 大翔, 男\n30, 村上 莉子, 女\n31, 小川 悠人, 男\n32, 長谷川 咲良, 女\n33, 岡田 陽向, 男\n34, 藤田 結衣, 女\n35, 後藤 陸, 男\n36, 近藤 陽菜, 女\n37, 石井 湊, 男\n38, 小島 葵, 女\n39, 遠藤 樹, 男\n40, 青木 凛, 女\n41, 藤井 陸, 男\n42, 西村 澪, 女\n43, 安藤 蒼, 男\n44, 辻 紬, 女\n45, 山下 大和, 男\n46, 岡本 杏奈, 女\n47, 森本 悠真, 男\n48, 今井 桜, 女`;
 
         function App() {
           const [mode, setMode] = useState('teacher');
@@ -123,25 +67,19 @@
           const [seats, setSeats] = useState([]);
           const [lockedSeats, setLockedSeats] = useState({});
           const [seatAttributes, setSeatAttributes] = useState({});
-          const [importText, setImportText] = useState(INITIAL_STUDENTS_TEXT);
-          const [importUrl, setImportUrl] = useState('');
+          const [importText, setImportText] = useState(INITIAL_TEXT);
           const [revealState, setRevealState] = useState({});
           const [blackboardPosition, setBlackboardPosition] = useState('top');
           const [isShuffling, setIsShuffling] = useState(false);
           const [activeTool, setActiveTool] = useState('CURSOR');
           const [editingSeatIndex, setEditingSeatIndex] = useState(null);
-          const [searchQuery, setSearchQuery] = useState('');
-          const [showSaveMenu, setShowSaveMenu] = useState(false);
-          const [importError, setImportError] = useState('');
-          const captureRef = useRef(null);
           const { playFlip, playDrumroll, playTada, enabled: isSoundEnabled, setEnabled: setIsSoundEnabled } = useSound();
 
-          useEffect(() => { parseStudents(INITIAL_STUDENTS_TEXT); }, []);
+          useEffect(() => { parseStudents(INITIAL_TEXT); }, []);
           useEffect(() => {
-            const newSize = rows * cols;
             setSeats(prev => {
-              const newSeats = new Array(newSize).fill(null);
-              for (let i = 0; i < Math.min(prev.length, newSize); i++) newSeats[i] = prev[i];
+              const newSeats = new Array(rows * cols).fill(null);
+              for (let i = 0; i < Math.min(prev.length, newSeats.length); i++) newSeats[i] = prev[i];
               return newSeats;
             });
           }, [rows, cols]);
@@ -149,213 +87,122 @@
           const parseStudents = (text) => {
             const lines = text.trim().split('\n');
             const parsed = lines.map((line, i) => {
-              const parts = line.split(/[,\t]/).map(p => p.trim()).filter(p => p);
-              let number = i + 1, name = `生徒${i+1}`, gender = 'M';
-              if (parts.length >= 3) {
-                if (!isNaN(parseInt(parts[0]))) { number = parseInt(parts[0]); name = parts[1]; gender = (parts[2].includes('女') || parts[2].toLowerCase().includes('f')) ? 'F' : 'M'; }
-              } else if (parts.length === 2) {
-                if (!isNaN(parseInt(parts[0]))) { number = parseInt(parts[0]); name = parts[1]; }
-                else { name = parts[0]; gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M'; }
-              }
-              return { id: `s-${i}`, number, name, gender };
+              const parts = line.split(/[,\t]/).map(p => p.trim());
+              return { id: `s-${i}`, number: parts[0] || i+1, name: parts[1] || `生徒${i+1}`, gender: (parts[2] && (parts[2].includes('女') || parts[2].toLowerCase().includes('f'))) ? 'F' : 'M' };
             });
             setStudents(parsed);
           };
 
-          const handleUrlImport = async () => {
-            setImportError('');
-            const match = importUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-            if (!match) { setImportError('無効なURLです。'); return; }
-            try {
-              const res = await fetch(`https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv`);
-              const text = await res.text();
-              setImportText(text); parseStudents(text); setImportUrl('');
-            } catch (e) { setImportError('読み込み失敗。公開設定を確認してください。'); }
-          };
-
-          const shuffleSeatsWithAnimation = () => {
-            if (mode === 'student') {
-              setIsShuffling(true); playDrumroll();
-              setTimeout(() => { shuffleSeatsLogic(); setIsShuffling(false); playTada(); }, 1500);
-            } else { shuffleSeatsLogic(); }
-          };
-
-          const shuffleSeatsLogic = () => {
+          const shuffleLogic = () => {
             let newSeats = [...seats];
-            const attributeIndices = { M: [], F: [], EMPTY: [], NONE: [] };
-            const lockedStudentIds = new Set();
-            for (let i = 0; i < newSeats.length; i++) {
-              if (lockedSeats[i] && newSeats[i]) { lockedStudentIds.add(newSeats[i]); }
-              else {
-                newSeats[i] = null;
-                const attr = seatAttributes[i];
-                if (attr === 'EMPTY') attributeIndices.EMPTY.push(i);
-                else if (attr === 'M') attributeIndices.M.push(i);
-                else if (attr === 'F') attributeIndices.F.push(i);
-                else attributeIndices.NONE.push(i);
-              }
-            }
-            let pool = students.filter(s => !lockedStudentIds.has(s.id));
+            const lockedIds = new Set();
+            seats.forEach((sid, i) => { if(lockedSeats[i] && sid) lockedIds.add(sid); else newSeats[i] = null; });
+            let pool = students.filter(s => !lockedIds.has(s.id));
             let boys = pool.filter(s => s.gender === 'M').sort(() => Math.random() - 0.5);
             let girls = pool.filter(s => s.gender === 'F').sort(() => Math.random() - 0.5);
-            attributeIndices.M.forEach(idx => { if (boys.length > 0) newSeats[idx] = boys.pop().id; });
-            attributeIndices.F.forEach(idx => { if (girls.length > 0) newSeats[idx] = girls.pop().id; });
-            let remaining = [...boys, ...girls].sort(() => Math.random() - 0.5);
-            attributeIndices.NONE.forEach(idx => { if (remaining.length > 0) newSeats[idx] = remaining.pop().id; });
+            seats.forEach((_, i) => {
+              if(!newSeats[i]) {
+                if(seatAttributes[i] === 'M' && boys.length > 0) newSeats[i] = boys.pop().id;
+                else if(seatAttributes[i] === 'F' && girls.length > 0) newSeats[i] = girls.pop().id;
+              }
+            });
+            let remain = [...boys, ...girls].sort(() => Math.random() - 0.5);
+            seats.forEach((_, i) => { if(!newSeats[i] && seatAttributes[i] !== 'EMPTY' && remain.length > 0) newSeats[i] = remain.pop().id; });
             setSeats(newSeats); setRevealState({});
           };
 
-          const getStudent = (id) => students.find(s => s.id === id);
-
-          const handleSeatInteract = (index) => {
-            if (activeTool === 'CURSOR') { setEditingSeatIndex(index); setSearchQuery(''); }
-            else if (activeTool === 'EMPTY') {
-              const isNowEmpty = seatAttributes[index] !== 'EMPTY';
-              setSeatAttributes(prev => ({ ...prev, [index]: isNowEmpty ? 'EMPTY' : null }));
-              if (isNowEmpty) { setSeats(prev => { const n = [...prev]; n[index] = null; return n; }); setLockedSeats(prev => ({ ...prev, [index]: false })); }
-            } else {
-              setSeatAttributes(prev => ({ ...prev, [index]: prev[index] === activeTool ? null : activeTool }));
-              setLockedSeats(prev => ({ ...prev, [index]: false }));
-            }
+          const handleShuffle = () => {
+            if (mode === 'student') { setIsShuffling(true); playDrumroll(); setTimeout(() => { shuffleLogic(); setIsShuffling(false); playTada(); }, 1500); }
+            else shuffleLogic();
           };
 
-          const handleSeatEditModal = (action, payload) => {
-            const index = editingSeatIndex;
-            if (action === 'SET_EMPTY') { setSeats(prev => { const n = [...prev]; n[index] = null; return n; }); setSeatAttributes(prev => ({ ...prev, [index]: 'EMPTY' })); }
-            else if (action === 'SET_ATTRIBUTE') { setSeatAttributes(prev => ({ ...prev, [index]: payload })); if (payload) setSeats(prev => { const n = [...prev]; n[index] = null; return n; }); }
-            else if (action === 'SET_STUDENT') {
-              const currentIdx = seats.indexOf(payload);
-              let newSeats = [...seats];
-              if (currentIdx !== -1) newSeats[currentIdx] = null;
-              newSeats[index] = payload; setSeats(newSeats); setLockedSeats(prev => ({ ...prev, [index]: true })); setSeatAttributes(prev => ({ ...prev, [index]: null }));
-            }
-            setEditingSeatIndex(null);
-          };
-
-          const Blackboard = ({ className = "" }) => (
-            <div className={`w-full max-w-6xl flex flex-col items-center ${className} print:hidden`}>
-              <div className="w-full h-12 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-1 flex items-center justify-center rounded-sm">
-                <div className="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1"></div>
-              </div>
-            </div>
+          const Blackboard = () => (
+            <div className="w-full bg-[#1a472a] h-10 border-y-4 border-[#5d4037] mb-4 flex items-center justify-center rounded shadow-lg text-white/50 text-xs tracking-widest">BLACKBOARD</div>
           );
 
-          const TeacherDashboard = () => (
-            <div className="flex flex-col h-full bg-gray-100 text-gray-800">
-              <header className="bg-white border-b px-4 py-2 flex justify-between items-center shadow-sm print:hidden">
-                <h1 className="text-lg font-bold flex items-center"><Settings className="mr-2" size={20} /> 教員用設定</h1>
-                <div className="flex gap-2">
-                  <button onClick={shuffleSeatsWithAnimation} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md font-bold text-sm flex items-center gap-1"><Shuffle size={16} /> 実行</button>
-                  <button onClick={() => window.print()} className="bg-gray-200 hover:bg-gray-300 px-3 py-1.5 rounded-md font-bold text-sm flex items-center gap-1"><Printer size={16} /> 印刷</button>
-                  <button onClick={() => setMode('student')} className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-md font-bold text-sm flex items-center gap-1"><Monitor size={16} /> 生徒モード</button>
-                </div>
-              </header>
-              <div className="flex flex-1 overflow-hidden">
-                <aside className="w-72 bg-white border-r p-4 overflow-y-auto flex flex-col gap-4">
-                  <section className="bg-indigo-50 p-3 rounded-lg border border-indigo-100 text-xs">
-                    <h2 className="font-bold text-indigo-800 mb-2">ペンツール</h2>
-                    <div className="grid grid-cols-2 gap-2">
-                      {['CURSOR', 'EMPTY', 'M', 'F'].map(t => (
-                        <button key={t} onClick={() => setActiveTool(t)} className={`p-2 rounded border ${activeTool === t ? 'bg-indigo-600 text-white' : 'bg-white'}`}>
-                          {t === 'CURSOR' ? '選択' : t === 'EMPTY' ? '空席' : t === 'M' ? '男子' : '女子'}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                  <section>
-                    <h2 className="text-xs font-bold text-gray-500 mb-1">名簿更新 ({students.length}名)</h2>
-                    <textarea className="w-full h-32 p-2 text-xs border rounded font-mono bg-gray-50" value={importText} onChange={e => setImportText(e.target.value)} />
-                    <button onClick={() => parseStudents(importText)} className="w-full py-1 mt-1 bg-gray-200 text-xs rounded">更新</button>
-                  </section>
-                  <section>
-                    <h2 className="text-xs font-bold text-gray-500 mb-1">レイアウト (横×縦)</h2>
-                    <div className="flex gap-2">
-                      <input type="number" value={cols} onChange={e => setCols(parseInt(e.target.value))} className="w-full border p-1" />
-                      <input type="number" value={rows} onChange={e => setRows(parseInt(e.target.value))} className="w-full border p-1" />
-                    </div>
-                  </section>
-                </aside>
-                <main className="flex-1 p-4 overflow-auto flex flex-col items-center">
-                  <div ref={captureRef} className="w-full flex flex-col items-center">
-                    {blackboardPosition === 'top' && <Blackboard className="mb-4" />}
-                    <div className="grid gap-2 w-full max-w-5xl" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-                      {seats.map((sid, i) => {
-                        const student = getStudent(sid);
-                        const attr = seatAttributes[i];
-                        let bg = student ? (student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100') : 'bg-white';
-                        if (attr === 'EMPTY') bg = 'bg-gray-300';
-                        return (
-                          <div key={i} onClick={() => handleSeatInteract(i)} className={`aspect-[4/3] border rounded flex flex-col items-center justify-center cursor-pointer hover:shadow-md ${bg}`}>
-                            {student ? <><span className="text-[10px]">{student.number}</span><span className="font-bold">{student.name}</span></> : <span className="text-gray-400 text-xs">{attr === 'EMPTY' ? '空' : i+1}</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </main>
-              </div>
-              {editingSeatIndex !== null && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditingSeatIndex(null)}>
-                  <div className="bg-white p-6 rounded-lg max-w-sm w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                    <h3 className="font-bold mb-4">座席 {editingSeatIndex + 1} の設定</h3>
-                    <button className="w-full p-2 mb-2 border rounded" onClick={() => handleSeatEditModal('SET_EMPTY')}>空席にする</button>
-                    <div className="mt-4">
-                      <p className="text-xs mb-2">生徒を固定する:</p>
-                      {students.map(s => (
-                        <button key={s.id} className="w-full text-left p-2 border-b hover:bg-gray-50 text-sm" onClick={() => handleSeatEditModal('SET_STUDENT', s.id)}>{s.number}: {s.name}</button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-
-          const StudentView = () => {
-            const revealAll = () => { playTada(); const s = {}; seats.forEach((_, i) => s[i] = true); setRevealState(s); };
-            const drumRollReveal = () => {
-              playDrumroll(); setRevealState({});
-              seats.map((_, i) => i).sort(() => Math.random() - 0.5).forEach((idx, i) => {
-                setTimeout(() => { setRevealState(prev => ({ ...prev, [idx]: true })); playFlip(); }, i * 300 + 1000);
-              });
-            };
+          if (mode === 'teacher') {
             return (
-              <div className="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden">
-                <div className="flex-1 w-full p-4 overflow-y-auto flex flex-col items-center">
-                  <Blackboard className="mb-8" />
-                  <div className="grid gap-3 w-full max-w-6xl pb-24" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-                    {seats.map((sid, i) => {
-                      const student = getStudent(sid);
-                      const revealed = revealState[i];
-                      if (!sid && seatAttributes[i] === 'EMPTY') return <div key={i} className="aspect-[4/3] opacity-20 border-2 border-dashed border-white rounded" />;
-                      return (
-                        <div key={i} onClick={() => !isShuffling && setRevealState(p => ({ ...p, [i]: !p[i] }))} className="aspect-[4/3] relative" style={{ perspective: '1000px' }}>
-                          <div className={`w-full h-full transition-all duration-500 shadow-xl rounded-md ${revealed ? '' : 'bg-[#f0e6d2]'}`} style={{ transformStyle: 'preserve-3d', transform: revealed ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
-                            <div className="absolute inset-0 flex items-center justify-center backface-hidden"><span className="text-4xl font-bold text-[#8d6e63] opacity-20">{student?.number}</span></div>
-                            <div className={`absolute inset-0 flex flex-col items-center justify-center backface-hidden rounded-md ${student?.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100'}`} style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden' }}>
-                              <span className="text-xs mb-1">{student?.number}</span>
-                              <span className="text-2xl font-bold">{student?.name}</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+              <div className="flex flex-col h-screen overflow-hidden">
+                <header className="bg-white p-3 border-b flex justify-between shadow-sm">
+                  <h1 className="font-bold flex items-center gap-2"><Settings size={18}/>座席替え設定</h1>
+                  <div className="flex gap-2">
+                    <button onClick={handleShuffle} className="bg-indigo-600 text-white px-4 py-1 rounded font-bold">実行</button>
+                    <button onClick={() => setMode('student')} className="bg-teal-600 text-white px-4 py-1 rounded font-bold">生徒画面</button>
                   </div>
-                </div>
-                <div className="fixed bottom-4 flex gap-4 bg-black/50 p-4 rounded-full backdrop-blur-md">
-                  <button onClick={() => setMode('teacher')} className="text-white text-xs">設定</button>
-                  <button onClick={drumRollReveal} className="bg-yellow-500 px-4 py-2 rounded-full font-bold">公開開始！</button>
-                  <button onClick={revealAll} className="bg-green-600 text-white px-4 py-2 rounded-full font-bold">一斉公開</button>
+                </header>
+                <div className="flex flex-1 overflow-hidden">
+                  <aside className="w-64 p-4 border-r bg-gray-50 overflow-y-auto space-y-4">
+                    <div>
+                      <label className="text-xs font-bold text-gray-500">ツール選択</label>
+                      <div className="grid grid-cols-2 gap-1 mt-1">
+                        {['CURSOR', 'EMPTY', 'M', 'F'].map(t => (
+                          <button key={t} onClick={() => setActiveTool(t)} className={`p-2 text-xs border rounded ${activeTool === t ? 'bg-indigo-600 text-white' : 'bg-white'}`}>
+                            {t === 'CURSOR' ? '選択' : t === 'EMPTY' ? '空席' : t === 'M' ? '男子' : '女子'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-gray-500">名簿 (番号,名前,性別)</label>
+                      <textarea className="w-full h-40 text-[10px] p-2 border font-mono mt-1" value={importText} onChange={e => setImportText(e.target.value)} />
+                      <button onClick={() => parseStudents(importText)} className="w-full bg-gray-200 text-xs py-1 mt-1">更新</button>
+                    </div>
+                  </aside>
+                  <main className="flex-1 p-8 overflow-auto bg-gray-100 flex flex-col items-center">
+                    <div className="w-full max-w-4xl bg-white p-8 rounded shadow-lg">
+                      {blackboardPosition === 'top' && <Blackboard />}
+                      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+                        {seats.map((sid, i) => {
+                          const s = students.find(x => x.id === sid);
+                          const attr = seatAttributes[i];
+                          return (
+                            <div key={i} onClick={() => {
+                              if(activeTool === 'CURSOR') setEditingSeatIndex(i);
+                              else if(activeTool === 'EMPTY') setSeatAttributes(p => ({...p, [i]: p[i] === 'EMPTY' ? null : 'EMPTY'}));
+                              else setSeatAttributes(p => ({...p, [i]: p[i] === activeTool ? null : activeTool}));
+                            }} className={`aspect-[4/3] border rounded flex flex-col items-center justify-center cursor-pointer text-xs ${s ? (s.gender==='M'?'bg-blue-50':'bg-pink-50') : (attr==='EMPTY'?'bg-gray-200':'bg-white')}`}>
+                              {s ? <b>{s.name}</b> : <span className="text-gray-300">{attr==='EMPTY'?'空':i+1}</span>}
+                              {attr && attr!=='EMPTY' && <span className="text-[8px] text-gray-400">{attr}指定</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </main>
                 </div>
               </div>
             );
-          };
+          }
 
           return (
-            <>
-              <style>{`.backface-hidden { backface-visibility: hidden; }`}</style>
-              {mode === 'teacher' ? <TeacherDashboard /> : <StudentView />}
-            </>
+            <div className="fixed inset-0 bg-[#2b3a42] p-4 flex flex-col items-center overflow-y-auto">
+              <div className="w-full max-w-5xl">
+                <Blackboard />
+                <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+                  {seats.map((sid, i) => {
+                    const s = students.find(x => x.id === sid);
+                    const revealed = revealState[i];
+                    if(!sid && seatAttributes[i] === 'EMPTY') return <div key={i} className="aspect-[4/3] border border-white/10 rounded" />;
+                    return (
+                      <div key={i} onClick={() => setRevealState(p => ({...p, [i]: !p[i]}))} className="aspect-[4/3] relative" style={{ perspective: '1000px' }}>
+                        <div className={`w-full h-full transition-all duration-500 rounded shadow-2xl ${revealed ? '' : 'bg-[#f0e6d2]'}`} style={{ transformStyle: 'preserve-3d', transform: revealed ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
+                          <div className="absolute inset-0 flex items-center justify-center backface-hidden"><span className="text-2xl font-bold text-[#8d6e63] opacity-20">{s?.number}</span></div>
+                          <div className={`absolute inset-0 flex flex-col items-center justify-center backface-hidden rounded ${s?.gender==='M'?'bg-blue-100':'bg-pink-100'}`} style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden' }}>
+                            <span className="text-[10px] mb-1">{s?.number}</span>
+                            <span className="text-xl font-bold">{s?.name}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="fixed bottom-6 flex gap-3 bg-black/60 p-4 rounded-full backdrop-blur-md">
+                <button onClick={() => setMode('teacher')} className="text-white text-xs px-2">設定</button>
+                <button onClick={handleShuffle} className="bg-yellow-500 px-6 py-2 rounded-full font-bold">シャッフル！</button>
+                <button onClick={() => { playTada(); const ns={}; seats.forEach((_,i)=>ns[i]=true); setRevealState(ns); }} className="bg-green-600 text-white px-6 py-2 rounded-full font-bold">一斉公開</button>
+              </div>
+            </div>
           );
         }
 
