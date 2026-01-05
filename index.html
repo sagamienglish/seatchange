@@ -35,6 +35,7 @@
 
     <div id="app" class="h-full w-full flex flex-col overflow-hidden"></div>
 
+    <!-- モーダル -->
     <div id="modal-overlay" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 hidden" onclick="closeModal()">
         <div id="modal-content" class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]" onclick="event.stopPropagation()"></div>
     </div>
@@ -101,6 +102,7 @@
             seatAttributes: {}, 
             importText: INITIAL_STUDENTS_TEXT,
             importUrl: '',
+            importError: '',
             revealState: {},
             blackboardPosition: 'top',
             isShuffling: false,
@@ -182,6 +184,33 @@
             render();
         }
 
+        async function handleUrlImport() {
+            state.importError = '';
+            if (!state.importUrl) return;
+            let csvUrl = state.importUrl;
+            const match = state.importUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+            if (match && match[1]) {
+                csvUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv`;
+            } else {
+                state.importError = '有効なURLではありません。';
+                render();
+                return;
+            }
+            try {
+                const response = await fetch(csvUrl);
+                if (!response.ok) throw new Error('Access denied');
+                const text = await response.text();
+                state.importText = text;
+                parseStudents(text);
+                state.importUrl = '';
+                initSeats(); 
+            } catch (e) {
+                console.error(e);
+                state.importError = '読み込みに失敗しました。公開設定を確認してください。';
+                render();
+            }
+        }
+
         function shuffleSeatsLogic() {
             let newSeats = [...state.seats];
             const lockedIds = new Set();
@@ -229,8 +258,10 @@
         window.toggleSaveMenu = () => { state.showSaveMenu = !state.showSaveMenu; render(); };
         window.setActiveTool = (t) => { state.activeTool = t; state.swapSourceIndex = null; render(); };
         window.toggleRoster = () => { state.isRosterOpen = !state.isRosterOpen; render(); };
+        window.updateImportUrl = (v) => { state.importUrl = v; };
         window.updateImportText = (v) => { state.importText = v; };
         window.runImport = () => { parseStudents(state.importText); initSeats(); };
+        window.runUrlImport = () => handleUrlImport();
         window.updateRows = (v) => { state.rows = Math.max(1, parseInt(v) || 1); initSeats(); };
         window.updateCols = (v) => { state.cols = Math.max(1, parseInt(v) || 1); initSeats(); };
         window.toggleBlackboard = () => { state.blackboardPosition = state.blackboardPosition === 'top' ? 'bottom' : 'top'; render(); };
@@ -282,25 +313,39 @@
             closeModal(); render();
         };
 
-        // --- 保存処理 (安定版) ---
+        // --- 保存処理 ---
         window.prepareAndCapture = async (type) => {
             state.showSaveMenu = false; render();
             const el = document.getElementById('capture-container');
             if (!el) return;
             try {
+                const dynamicWidth = Math.max(1400, state.cols * 150 + 200);
+                const dynamicHeight = Math.max(1000, state.rows * 120 + 200);
+
                 const canvas = await html2canvas(el, {
                     scale: 3, backgroundColor: '#ffffff', useCORS: true,
                     onclone: (cloned) => {
                         const target = cloned.getElementById('capture-container');
                         if (target) {
-                            target.style.width = '1400px'; target.style.height = 'auto'; target.style.padding = '50px';
+                            target.style.width = `${dynamicWidth}px`; target.style.height = 'auto'; target.style.padding = '60px';
                             const grid = target.querySelector('.seat-grid');
                             if (grid) {
                                 grid.style.display = 'grid';
                                 grid.style.gridTemplateColumns = `repeat(${state.cols}, 120px)`;
-                                grid.style.gridTemplateRows = `repeat(${state.rows}, 60px)`;
-                                grid.style.gap = '10px';
+                                grid.style.gridTemplateRows = `repeat(${state.rows}, 100px)`; // 高さをさらに確保
+                                grid.style.gap = '15px';
                             }
+                            const cells = target.querySelectorAll('.seat-cell');
+                            cells.forEach(cell => {
+                                cell.style.height = '100px';
+                                const nameDiv = cell.querySelector('.student-name');
+                                if (nameDiv) {
+                                    nameDiv.style.fontSize = '26px';
+                                    nameDiv.style.lineHeight = '1.4'; // 行間を広げて見やすく
+                                    nameDiv.style.overflow = 'visible';
+                                    nameDiv.classList.remove('line-clamp-2');
+                                }
+                            });
                         }
                     }
                 });
@@ -315,9 +360,13 @@
                     });
                 } else {
                     const imgData = canvas.toDataURL('image/png');
-                    const pdf = new jspdf.jsPDF({ orientation: 'landscape' });
+                    const pdf = new jspdf.jsPDF({ orientation: 'landscape', format: 'a4' });
                     const pdfW = pdf.internal.pageSize.getWidth();
-                    pdf.addImage(imgData, 'PNG', 10, 10, pdfW - 20, 0);
+                    const pdfH = pdf.internal.pageSize.getHeight();
+                    const imgRatio = canvas.height / canvas.width;
+                    const displayW = pdfW - 20;
+                    const displayH = displayW * imgRatio;
+                    pdf.addImage(imgData, 'PNG', 10, 10, displayW, displayH);
                     pdf.save('座席表.pdf');
                 }
             } catch (e) { alert("保存中にエラーが発生しました。"); }
@@ -342,14 +391,65 @@
             const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
+            const header = `
+                <header class="w-full h-14 bg-white border-b px-4 flex justify-between items-center shadow-sm shrink-0 z-30">
+                    <h1 class="font-bold text-gray-700 text-lg">席替えくん</h1>
+                    <button onclick="setMode('student')" class="bg-teal-600 text-white px-3 py-1.5 rounded font-bold text-xs flex items-center gap-1"><i data-lucide="monitor" class="w-4 h-4"></i> 生徒モード</button>
+                </header>`;
+
             const sidebarWidth = state.isSidebarCollapsed ? 'w-16' : 'w-64';
-            let cellsHtml = '';
+            const sidebar = `
+                <aside class="${sidebarWidth} bg-white border-r h-full flex flex-col p-2 gap-3 transition-all duration-300 overflow-y-auto no-scrollbar shrink-0">
+                    <button onclick="toggleSidebar()" class="self-end text-gray-400 hover:text-gray-600"><i data-lucide="${state.isSidebarCollapsed?'chevron-right':'chevron-left'}"></i></button>
+                    <button onclick="shuffleSeatsWithAnimation()" class="bg-indigo-600 text-white p-2 rounded font-bold text-xs flex items-center justify-center gap-2 shadow-sm"><i data-lucide="shuffle" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'席替え実行'}</button>
+                    <button onclick="clearSeats()" class="bg-red-50 text-red-600 p-2 rounded font-bold text-xs border border-red-100 flex items-center justify-center gap-2"><i data-lucide="eraser" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'クリア'}</button>
+                    <div class="${state.isSidebarCollapsed?'hidden':''}">
+                        <div class="flex gap-1">
+                            <button onclick="window.print()" class="flex-1 bg-gray-100 p-2 rounded text-[10px] font-bold">印刷</button>
+                            <div class="relative flex-1">
+                                <button onclick="toggleSaveMenu()" class="w-full bg-gray-100 p-2 rounded text-[10px] font-bold">保存</button>
+                                ${state.showSaveMenu ? `<div class="absolute top-full left-0 w-full bg-white border shadow-lg rounded z-50 py-1"><button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">画像</button><button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">PDF</button></div>` : ''}
+                            </div>
+                        </div>
+                        <section class="bg-indigo-50 p-2 rounded border border-indigo-100 mt-4">
+                            <h2 class="font-bold text-[10px] text-indigo-400 mb-2 uppercase">一括設定</h2>
+                            <div class="grid grid-cols-2 gap-1">
+                                <button onclick="setActiveTool('CURSOR')" class="p-1 rounded text-[10px] border ${state.activeTool==='CURSOR'?'bg-white shadow text-indigo-700':'text-indigo-400'}">選択</button>
+                                <button onclick="setActiveTool('EMPTY')" class="p-1 rounded text-[10px] border ${state.activeTool==='EMPTY'?'bg-gray-700 text-white':'text-indigo-400'}">空席</button>
+                                <button onclick="setActiveTool('M')" class="p-1 rounded text-[10px] border ${state.activeTool==='M'?'bg-blue-500 text-white':'text-indigo-400'}">♂ 男子</button>
+                                <button onclick="setActiveTool('F')" class="p-1 rounded text-[10px] border ${state.activeTool==='F'?'bg-pink-500 text-white':'text-indigo-400'}">♀ 女子</button>
+                            </div>
+                            <button onclick="setActiveTool('SWAP')" class="w-full mt-1 p-1 rounded text-[10px] border ${state.activeTool==='SWAP'?'bg-orange-500 text-white':'text-indigo-400'}">席の入れ替え</button>
+                        </section>
+                        <section class="border rounded p-2 text-[11px] mt-4">
+                            <div class="flex justify-between items-center cursor-pointer" onclick="toggleRoster()"><span class="font-bold text-gray-500">名簿読み込み・編集</span><i data-lucide="${state.isRosterOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i></div>
+                            ${state.isRosterOpen ? `
+                                <div class="mt-2 space-y-1">
+                                    <div class="flex gap-1">
+                                        <input type="text" oninput="updateImportUrl(this.value)" placeholder="Spreadsheet URL" class="flex-1 p-1 border rounded text-[9px]">
+                                        <button onclick="runUrlImport()" class="bg-green-600 text-white p-1 rounded"><i data-lucide="link" class="w-3 h-3"></i></button>
+                                    </div>
+                                    ${state.importError ? `<p class="text-[8px] text-red-500">${state.importError}</p>` : ''}
+                                    <textarea oninput="updateImportText(this.value)" class="w-full h-32 p-1 border rounded text-[10px] font-mono no-scrollbar">${state.importText}</textarea>
+                                    <button onclick="runImport()" class="w-full bg-gray-100 py-1 rounded font-bold text-[10px]">更新</button>
+                                </div>` : ''}
+                        </section>
+                        <div class="text-[11px] space-y-2 mt-4">
+                            <div class="flex items-center justify-between">横幅 <div class="flex items-center gap-2"><button onclick="updateCols(${state.cols-1})" class="bg-gray-100 w-6 rounded">-</button><span>${state.cols}</span><button onclick="updateCols(${state.cols+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
+                            <div class="flex items-center justify-between">縦幅 <div class="flex items-center gap-2"><button onclick="updateRows(${state.rows-1})" class="bg-gray-100 w-6 rounded">-</button><span>${state.rows}</span><button onclick="updateRows(${state.rows+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
+                            <button onclick="toggleBlackboard()" class="w-full bg-white border py-1 rounded text-gray-500 mt-2 text-[10px]">黒板の上下を切り替え</button>
+                        </div>
+                    </div>
+                </aside>`;
+
+            let gridCells = '';
             displayIndices.forEach(i => {
-                const student = getStudent(state.seats[i]);
-                const attr = state.seatAttributes[i];
+                const sId = state.seats[i];
+                const student = getStudent(sId);
                 const isLocked = state.lockedSeats[i];
                 const isSwapping = state.activeTool === 'SWAP' && state.swapSourceIndex === i;
-                
+                const attr = state.seatAttributes[i];
+
                 let bgColor = 'bg-gray-50', ring = isSwapping ? 'ring-4 ring-orange-400 z-10' : '';
                 if (student) bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
                 else if (attr === 'EMPTY') bgColor = 'bg-gray-200';
@@ -359,57 +459,24 @@
 
                 let animStyle = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*40}px, ${(Math.random()-0.5)*40}px) rotate(${(Math.random()-0.5)*20}deg);` : '';
 
-                cellsHtml += `
-                <div onclick="handleSeatClick(${i})" class="rounded border border-gray-300 flex flex-col items-center justify-center relative ${bgColor} ${ring} overflow-hidden" style="width: 120px; height: 60px; ${animStyle}">
-                    ${student ? `<span class="text-[12px] font-bold text-gray-400 absolute top-0.5 left-1">${student.number}</span><div class="text-[13px] font-bold text-gray-800 line-clamp-2 text-center px-1">${student.name}</div>` : `<span class="text-gray-300 font-bold text-xs">${attr==='EMPTY'?'×':i+1}</span>`}
+                gridCells += `
+                <div onclick="handleSeatClick(${i})" class="seat-cell rounded border border-gray-300 flex flex-col items-center justify-center relative ${bgColor} ${ring} overflow-hidden" style="width: 120px; height: 60px; ${animStyle}">
+                    ${student ? `<span class="text-[12px] font-bold text-gray-400 absolute top-0.5 left-1">${student.number}</span><div class="student-name text-[13px] font-bold text-gray-800 line-clamp-2 text-center px-1">${student.name}</div>` : `<span class="text-gray-300 font-bold text-xs">${attr==='EMPTY'?'×':i+1}</span>`}
                     <div class="absolute top-0.5 right-1">${!student && isLocked ? '<i data-lucide="lock" class="w-2 h-2 text-red-400"></i>' : ''}</div>
                 </div>`;
             });
 
-            const gridHtml = `<div class="seat-grid grid gap-1 p-2 bg-white rounded-lg shadow-inner" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${cellsHtml}</div>`;
+            const seatGridHtml = `<div class="seat-grid grid gap-1 p-2 bg-white rounded-lg shadow-inner" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${gridCells}</div>`;
 
             container.innerHTML = `
-                <header class="w-full h-14 bg-white border-b px-4 flex justify-between items-center shadow-sm shrink-0 z-30">
-                    <h1 class="font-bold text-gray-700 text-lg">席替えくん</h1>
-                    <button onclick="setMode('student')" class="bg-teal-600 text-white px-3 py-1.5 rounded font-bold text-xs flex items-center gap-1"><i data-lucide="monitor" class="w-4 h-4"></i> 生徒モード</button>
-                </header>
+                ${header}
                 <div class="flex flex-1 overflow-hidden">
-                    <aside class="${sidebarWidth} bg-white border-r h-full flex flex-col p-2 gap-3 transition-all duration-300 overflow-y-auto no-scrollbar print:hidden shrink-0">
-                        <button onclick="toggleSidebar()" class="self-end text-gray-400 hover:text-gray-600"><i data-lucide="${state.isSidebarCollapsed?'chevron-right':'chevron-left'}"></i></button>
-                        <button onclick="shuffleSeatsWithAnimation()" class="bg-indigo-600 text-white p-2 rounded font-bold text-xs flex items-center justify-center gap-2"><i data-lucide="shuffle" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'席替え実行'}</button>
-                        <button onclick="clearSeats()" class="bg-red-50 text-red-600 p-2 rounded font-bold text-xs border border-red-100 flex items-center justify-center gap-2"><i data-lucide="eraser" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'クリア'}</button>
-                        <div class="${state.isSidebarCollapsed?'hidden':''}">
-                            <div class="flex gap-1">
-                                <button onclick="window.print()" class="flex-1 bg-gray-100 p-2 rounded text-[10px] font-bold">印刷</button>
-                                <div class="relative flex-1">
-                                    <button onclick="toggleSaveMenu()" class="w-full bg-gray-100 p-2 rounded text-[10px] font-bold">保存</button>
-                                    ${state.showSaveMenu ? `<div class="absolute top-full left-0 w-full bg-white border shadow-lg rounded z-50 py-1"><button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">画像</button><button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">PDF</button></div>` : ''}
-                                </div>
-                            </div>
-                            <section class="bg-indigo-50 p-2 rounded border border-indigo-100 mt-4">
-                                <h2 class="font-bold text-[10px] text-indigo-400 mb-2">一括設定</h2>
-                                <div class="grid grid-cols-2 gap-1">
-                                    <button onclick="setActiveTool('CURSOR')" class="p-1 rounded text-[10px] border ${state.activeTool==='CURSOR'?'bg-white shadow text-indigo-700':'text-indigo-400'}">選択</button>
-                                    <button onclick="setActiveTool('EMPTY')" class="p-1 rounded text-[10px] border ${state.activeTool==='EMPTY'?'bg-gray-700 text-white':'text-indigo-400'}">空席</button>
-                                    <button onclick="setActiveTool('M')" class="p-1 rounded text-[10px] border ${state.activeTool==='M'?'bg-blue-500 text-white':'text-indigo-400'}">♂ 男子</button>
-                                    <button onclick="setActiveTool('F')" class="p-1 rounded text-[10px] border ${state.activeTool==='F'?'bg-pink-500 text-white':'text-indigo-400'}">♀ 女子</button>
-                                </div>
-                                <button onclick="setActiveTool('SWAP')" class="w-full mt-1 p-1 rounded text-[10px] border ${state.activeTool==='SWAP'?'bg-orange-500 text-white':'text-indigo-400'}">席の入れ替え</button>
-                            </section>
-                            <section class="border rounded p-2 text-[11px] mt-4">
-                                <div class="flex justify-between items-center cursor-pointer" onclick="toggleRoster()"><span class="font-bold text-gray-500">名簿編集</span><i data-lucide="${state.isRosterOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i></div>
-                                ${state.isRosterOpen ? `<textarea oninput="updateImportText(this.value)" class="w-full h-32 mt-2 p-1 border rounded text-[10px] font-mono no-scrollbar">${state.importText}</textarea><button onclick="runImport()" class="w-full bg-gray-100 mt-1 py-1 rounded font-bold text-[10px]">更新</button>` : ''}
-                            </section>
-                            <div class="text-[11px] space-y-2 mt-4">
-                                <div class="flex items-center justify-between">横幅 <div class="flex items-center gap-2"><button onclick="updateCols(${state.cols-1})" class="bg-gray-100 w-6 rounded">-</button><span>${state.cols}</span><button onclick="updateCols(${state.cols+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
-                                <div class="flex items-center justify-between">縦幅 <div class="flex items-center gap-2"><button onclick="updateRows(${state.rows-1})" class="bg-gray-100 w-6 rounded">-</button><span>${state.rows}</span><button onclick="updateRows(${state.rows+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
-                                <button onclick="toggleBlackboard()" class="w-full bg-white border py-1 rounded text-gray-500 mt-2 text-[10px]">黒板の上下を切り替え</button>
-                            </div>
-                        </div>
-                    </aside>
-                    <main class="flex-1 overflow-auto flex flex-col items-center p-4 bg-gray-100 pb-[120px]">
+                    ${sidebar}
+                    <main class="flex-1 overflow-auto flex flex-col items-center p-4 pt-8 bg-gray-100 no-scrollbar pb-[100px]">
                         <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-2 rounded-xl">
-                            ${state.blackboardPosition === 'top' ? renderBlackboard('top') + gridHtml : gridHtml + renderBlackboard('bottom')}
+                            ${state.blackboardPosition === 'top' ? renderBlackboard('top') : ''}
+                            ${seatGridHtml}
+                            ${state.blackboardPosition === 'bottom' ? renderBlackboard('bottom') : ''}
                         </div>
                     </main>
                 </div>
@@ -425,9 +492,9 @@
                 <div class="${controlsVisible} fixed bottom-4 left-0 right-0 flex justify-center items-center z-50">
                     <div class="bg-black/70 backdrop-blur-md p-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-white/20">
                         <button onclick="setMode('teacher')" class="px-4 py-2 bg-white/10 text-white rounded-xl font-bold text-sm">設定</button>
-                        <button onclick="toggleBlackboard()" class="px-4 py-2 bg-white/10 text-white rounded-xl font-bold text-sm">黒板切替</button>
+                        <button onclick="toggleBlackboard()" class="px-4 py-2 bg-white/10 text-white rounded-xl font-bold text-sm">黒板↑↓</button>
                         <button onclick="toggleSound()" class="p-2 bg-white/10 text-white rounded-full"><i data-lucide="${state.isSoundEnabled?'volume-2':'volume-x'}"></i></button>
-                        <div class="w-px h-8 bg-white/20"></div>
+                        <div class="w-px h-8 bg-white/20 mx-2"></div>
                         <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling?'disabled':''} class="bg-indigo-500 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 text-sm"><i data-lucide="shuffle" class="w-4 h-4"></i> 席替え</button>
                         <button onclick="drumRollReveal()" ${state.isShuffling?'disabled':''} class="bg-yellow-500 text-black px-6 py-2 rounded-xl font-bold text-sm">公開</button>
                         <button onclick="revealAll()" ${state.isShuffling?'disabled':''} class="bg-green-500 text-white px-8 py-2 rounded-xl font-bold text-sm">一斉</button>
@@ -438,9 +505,10 @@
 
             let gridCells = '';
             displayIndices.forEach(i => {
-                const student = getStudent(state.seats[i]);
+                const sId = state.seats[i];
+                const student = getStudent(sId);
                 const isRev = state.revealState[i];
-                if (!student && (state.seatAttributes[i] === 'EMPTY' || !state.seats[i])) {
+                if (!student && (state.seatAttributes[i] === 'EMPTY' || !sId)) {
                     gridCells += `<div class="rounded border border-white/5 bg-black/10 flex items-center justify-center opacity-30" style="width: 120px; height: 60px;">×</div>`;
                     return;
                 }
@@ -470,11 +538,6 @@
                 </div>`;
         }
 
-        function renderToolButton(tool, icon, label, activeClass, textIcon = '') {
-            const active = state.activeTool === tool;
-            return `<button onclick="setActiveTool('${tool}')" class="p-2 rounded flex flex-col items-center justify-center gap-1 w-full border ${active ? activeClass : 'bg-white text-gray-400 border-gray-200'} text-[10px]"><span>${textIcon}</span>${label}</button>`;
-        }
-
         function renderModal() {
             const content = document.getElementById('modal-content');
             if (!content || state.editingSeatIndex === null) return;
@@ -488,7 +551,7 @@
                 </button>`).join('');
 
             content.innerHTML = `
-                <div class="p-4 border-b bg-gray-50 flex justify-between items-center font-bold">座席 No.${i + 1} の設定<button onclick="closeModal()"><i data-lucide="x"></i></button></div>
+                <div class="p-4 border-b bg-gray-50 flex justify-between items-center font-bold font-sans text-gray-700">座席 No.${i + 1} の設定<button onclick="closeModal()"><i data-lucide="x"></i></button></div>
                 <div class="p-4 space-y-4 overflow-y-auto no-scrollbar">
                     <div class="grid grid-cols-2 gap-2">
                         <button onclick="editSeat('SET_ATTRIBUTE', 'EMPTY')" class="p-3 border rounded-xl text-xs font-bold ${state.seatAttributes[i]==='EMPTY'?'bg-gray-800 text-white':'bg-white'}">空席にする</button>
