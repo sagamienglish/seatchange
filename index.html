@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>席替えくん</title>
+    <title>高校席替えアプリ</title>
     
     <!-- Tailwind CSS (デザイン用) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -225,19 +225,16 @@
                 }
                 return { id: `s-${i}`, number, name, gender };
             });
-            // parseStudentsだけではrenderを呼ばない(初期化フローのため)
         }
 
         function initSeats() {
             const newSize = state.rows * state.cols;
             const newSeats = new Array(newSize).fill(null);
-            // 既存の席データを維持しつつリサイズ
             for (let i = 0; i < Math.min(state.seats.length, newSize); i++) {
                 newSeats[i] = state.seats[i];
             }
             state.seats = newSeats;
 
-            // Resize objects
             const resizeObj = (prev) => {
                 const next = {};
                 Object.keys(prev).forEach(key => {
@@ -270,7 +267,7 @@
                 parseStudents(text);
                 state.importUrl = '';
                 state.isRosterOpen = false;
-                initSeats(); // 更新後は再描画
+                initSeats(); 
             } catch (e) {
                 console.error(e);
                 state.importError = '読み込みに失敗しました。「リンクを知っている全員」に公開してください。';
@@ -339,11 +336,26 @@
         window.setActiveTool = (tool) => { state.activeTool = tool; render(); };
         window.toggleRoster = () => { state.isRosterOpen = !state.isRosterOpen; render(); };
         window.updateImportUrl = (val) => { state.importUrl = val; render(); };
-        window.updateImportText = (val) => { state.importText = val; }; // テキストエリアは再描画しない
+        window.updateImportText = (val) => { state.importText = val; }; 
         window.runImport = () => { parseStudents(state.importText); state.isRosterOpen = false; initSeats(); };
         window.runUrlImport = () => handleUrlImport();
-        window.updateRows = (val) => { state.rows = parseInt(val) || 1; initSeats(); };
-        window.updateCols = (val) => { state.cols = parseInt(val) || 1; initSeats(); };
+        
+        // 数値変更用のラッパー
+        window.updateRows = (val) => { 
+            let v = parseInt(val);
+            if (isNaN(v) || v < 1) v = 1;
+            if (v > 20) v = 20; // 安全策
+            state.rows = v; 
+            initSeats(); 
+        };
+        window.updateCols = (val) => { 
+            let v = parseInt(val);
+            if (isNaN(v) || v < 1) v = 1;
+            if (v > 12) v = 12; // 安全策
+            state.cols = v; 
+            initSeats(); 
+        };
+        
         window.toggleBlackboard = () => { state.blackboardPosition = state.blackboardPosition === 'top' ? 'bottom' : 'top'; render(); };
         
         window.handleSeatClick = (index) => {
@@ -393,7 +405,7 @@
                 setTimeout(() => {
                     state.revealState[index] = true;
                     playFlip();
-                    render(); // アニメーション中は頻繁に再描画
+                    render(); 
                 }, i * 300 + 1000);
             });
         };
@@ -450,7 +462,7 @@
         // 保存機能
         window.prepareAndCapture = async (type) => {
             state.showSaveMenu = false;
-            render(); // メニューを閉じる
+            render(); 
             
             const captureElement = document.getElementById('capture-container');
             if (!captureElement) return;
@@ -462,9 +474,7 @@
                         backgroundColor: '#ffffff',
                         logging: false,
                         useCORS: true,
-                        // 全体を確実にキャプチャするための設定
-                        windowWidth: document.documentElement.scrollWidth + 1000,
-                        windowHeight: document.documentElement.scrollHeight + 1000,
+                        windowWidth: 1600, // 確実に大きく描画させる
                         onclone: (clonedDoc) => {
                             const el = clonedDoc.getElementById('capture-container');
                             if (el) {
@@ -476,9 +486,8 @@
                                 el.style.overflow = 'visible';
                                 el.style.position = 'static';
                                 
-                                // 親要素のスクロール制限解除
                                 const main = clonedDoc.querySelector('main');
-                                if (main) {
+                                if(main) {
                                     main.style.overflow = 'visible';
                                     main.style.height = 'auto';
                                 }
@@ -507,7 +516,6 @@
                                         nameDiv.style.lineHeight = '1.2';
                                         nameDiv.style.whiteSpace = 'normal';
                                         nameDiv.style.overflow = 'visible';
-                                        // テキスト省略を解除
                                         nameDiv.classList.remove('line-clamp-2');
                                     }
                                 });
@@ -561,7 +569,6 @@
         }
 
         function renderTeacherMode() {
-            // 表示順序（黒板位置による反転）
             const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
@@ -624,16 +631,24 @@
 
                 <div class="text-xs">
                     <h2 class="font-bold text-gray-500 uppercase mb-1 flex items-center"><i data-lucide="grid" class="mr-1 w-3 h-3"></i> 配置</h2>
-                    <div class="flex gap-1">
-                        <label class="flex-1">横 <input type="number" min="1" max="12" value="${state.cols}" onchange="updateCols(this.value)" class="w-6 p-0.5 border rounded"></label>
-                        <label class="flex-1">縦 <input type="number" min="1" max="12" value="${state.rows}" onchange="updateRows(this.value)" class="w-6 p-0.5 border rounded"></label>
+                    <div class="flex gap-1 mb-1 items-center">
+                        <label class="w-6">横</label>
+                        <button onclick="updateCols(${state.cols - 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">-</button>
+                        <input type="number" min="1" max="12" value="${state.cols}" onchange="updateCols(this.value)" class="w-8 p-0.5 border rounded text-center">
+                        <button onclick="updateCols(${state.cols + 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">+</button>
+                    </div>
+                    <div class="flex gap-1 items-center">
+                        <label class="w-6">縦</label>
+                        <button onclick="updateRows(${state.rows - 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">-</button>
+                        <input type="number" min="1" max="12" value="${state.rows}" onchange="updateRows(this.value)" class="w-8 p-0.5 border rounded text-center">
+                        <button onclick="updateRows(${state.rows + 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">+</button>
                     </div>
                 </div>
                 
                 <button onclick="toggleBlackboard()" class="w-full py-1 bg-white border rounded hover:bg-gray-50 flex items-center justify-center gap-1 text-gray-700 text-xs"><i data-lucide="arrow-up-down" class="w-3 h-3"></i> 黒板: ${state.blackboardPosition === 'top' ? '上' : '下'}</button>
             </aside>`;
 
-            // メインエリア
+            // メインエリア (スクロール可に修正)
             const blackboard = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
             
             let gridCells = '';
@@ -676,8 +691,8 @@
 
             return `
                 ${sidebar}
-                <main class="flex-1 bg-gray-100 p-2 overflow-hidden flex flex-col items-center justify-center min-h-0">
-                    <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-full h-full max-h-full">
+                <main class="flex-1 bg-gray-100 p-2 overflow-y-auto flex flex-col items-center justify-start min-h-0">
+                    <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-full h-auto min-h-full">
                         ${state.blackboardPosition === 'top' ? blackboard : ''}
                         <div class="seat-grid grid gap-1 p-1 bg-white rounded-lg shadow-inner w-full h-full" 
                              style="grid-template-columns: repeat(${state.cols}, minmax(0, 1fr)); grid-template-rows: repeat(${state.rows}, minmax(0, 1fr));">
@@ -694,7 +709,7 @@
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
             const controls = `
-            <div class="fixed bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/90 to-transparent opacity-0 hover:opacity-100 transition-opacity z-50 flex justify-center items-center gap-2 print:hidden">
+            <div class="fixed bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/90 to-transparent opacity-0 hover:opacity-100 transition-opacity z-50 flex justify-center items-center gap-2 print:hidden h-16">
                 <button onclick="setMode('teacher')" class="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-xs rounded backdrop-blur">設定</button>
                 <button onclick="toggleSound()" class="p-1 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur"><i data-lucide="${state.isSoundEnabled ? 'volume-2' : 'volume-x'}" class="w-3.5 h-3.5"></i></button>
                 <div class="w-px h-6 bg-white/20 mx-1"></div>
@@ -761,14 +776,14 @@
             return `
                 <div class="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans">
                     <div class="absolute inset-0 pointer-events-none opacity-10 bg-repeat" style="background-image: radial-gradient(circle, #ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
-                    ${controls}
-                    <div class="flex-1 w-full p-1 md:p-2 flex flex-col items-center justify-center overflow-hidden z-10 pb-32">
+                    <div class="flex-1 w-full p-1 md:p-2 flex flex-col items-center justify-center overflow-hidden z-10 pb-20">
                         ${state.blackboardPosition === 'top' ? blackboard : ''}
                         <div class="grid gap-1 md:gap-2 w-full h-full flex-1" style="grid-template-columns: repeat(${state.cols}, minmax(0, 1fr)); grid-template-rows: repeat(${state.rows}, minmax(0, 1fr));">
                             ${gridCells}
                         </div>
                         ${state.blackboardPosition === 'bottom' ? blackboard.replace('mb-2', 'mt-2') : ''}
                     </div>
+                    ${controls}
                 </div>
             `;
         }
