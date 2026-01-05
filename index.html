@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>席替えくん</title>
+    <title>席替えアプリ</title>
     
     <!-- Tailwind CSS (デザイン用) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -310,19 +310,15 @@
         }
 
         function shuffleSeatsWithAnimation() {
-            if (state.mode === 'student') {
-                state.isShuffling = true;
-                playDrumroll();
-                render();
-                setTimeout(() => {
-                    shuffleSeatsLogic();
-                    state.isShuffling = false;
-                    playTada();
-                    render();
-                }, 1500);
-            } else {
+            state.isShuffling = true;
+            playDrumroll();
+            render();
+            setTimeout(() => {
                 shuffleSeatsLogic();
-            }
+                state.isShuffling = false;
+                playTada();
+                render();
+            }, 1500);
         }
 
         function getStudent(id) {
@@ -601,7 +597,7 @@
                 <div class="flex justify-between items-center">
                     <h1 class="font-bold flex items-center text-gray-700 text-sm md:text-base"><i data-lucide="settings" class="mr-1 w-4 h-4"></i> <span class="hidden md:inline">設定</span><span class="md:hidden">設定</span></h1>
                     <div class="flex gap-1 md:hidden">
-                        <button onclick="shuffleSeatsWithAnimation()" class="p-1.5 bg-indigo-600 text-white rounded"><i data-lucide="shuffle" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="p-1.5 bg-indigo-600 text-white rounded disabled:opacity-50"><i data-lucide="shuffle" class="w-3.5 h-3.5"></i></button>
                         <button onclick="toggleSaveMenu()" class="p-1.5 bg-gray-200 text-gray-700 rounded relative">
                             <i data-lucide="download" class="w-3.5 h-3.5"></i>
                             ${state.showSaveMenu ? renderSaveMenu() : ''}
@@ -611,7 +607,7 @@
                 </div>
 
                 <div class="hidden md:flex flex-col gap-2">
-                    <button onclick="shuffleSeatsWithAnimation()" class="flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="shuffle" class="w-3.5 h-3.5"></i> 席替え実行</button>
+                    <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white px-2 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="shuffle" class="w-3.5 h-3.5"></i> 席替え実行</button>
                     <button onclick="clearSeats()" class="flex items-center justify-center gap-1 bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="eraser" class="w-3.5 h-3.5"></i> クリア</button>
                     <div class="flex gap-1">
                         <button onclick="window.print()" class="flex-1 flex items-center justify-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1.5 rounded font-bold text-xs"><i data-lucide="printer" class="w-3 h-3"></i> 印刷</button>
@@ -675,7 +671,7 @@
                 <button onclick="toggleBlackboard()" class="w-full py-1 bg-white border rounded hover:bg-gray-50 flex items-center justify-center gap-1 text-gray-700 text-xs"><i data-lucide="arrow-up-down" class="w-3 h-3"></i> 黒板: ${state.blackboardPosition === 'top' ? '上' : '下'}</button>
             </aside>`;
 
-            // メインエリア (スクロール可に修正 + 座席のアスペクト比変更)
+            // メインエリア (スクロール可 + 座席のアスペクト比変更)
             const blackboard = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
             
             let gridCells = '';
@@ -689,12 +685,29 @@
                 let bgColor = 'bg-gray-50';
                 let ringColor = isSwapping ? 'ring-4 ring-orange-400 z-10' : ''; // 入れ替え選択中は強調
                 
+                // アニメーションスタイル
+                let style = '';
+                if (state.isShuffling) {
+                    const rX = (Math.random()-0.5)*50;
+                    const rY = (Math.random()-0.5)*50;
+                    const rR = (Math.random()-0.5)*360;
+                    style = `transform: translate(${rX}px,${rY}px) rotate(${rR}deg) scale(0.9); transition: transform 0.5s ease-in-out; z-index: 100; opacity: 0.8;`;
+                } else {
+                    style = `transition: transform 0.5s ease-out;`;
+                }
+
                 if (!isSwapping) {
-                    if (isLocked) { bgColor = 'bg-white'; ringColor = 'ring-1 ring-red-400'; }
-                    else if (attr === 'EMPTY') { bgColor = 'bg-gray-200'; }
-                    else if (attr === 'M') { bgColor = 'bg-blue-50 border-blue-300 border border-dashed'; }
-                    else if (attr === 'F') { bgColor = 'bg-pink-50 border-pink-300 border border-dashed'; }
-                    else if (student) { bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100'; }
+                    if (student) {
+                        // 生徒がいる場合は生徒の色を優先（席替え実行後の表示を統一）
+                        bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
+                        if (isLocked) { ringColor = 'ring-2 ring-red-500 z-10'; } // ロック状態は枠線で表示
+                    } else {
+                        // 生徒がいない場合（設定中）
+                        if (isLocked) { bgColor = 'bg-white'; ringColor = 'ring-1 ring-red-400'; }
+                        else if (attr === 'EMPTY') { bgColor = 'bg-gray-200'; }
+                        else if (attr === 'M') { bgColor = 'bg-blue-50 border-blue-300 border border-dashed'; }
+                        else if (attr === 'F') { bgColor = 'bg-pink-50 border-pink-300 border border-dashed'; }
+                    }
                 }
 
                 let content = '';
@@ -708,13 +721,16 @@
                 }
 
                 let icons = '';
+                // ロックアイコンなどは枠線で表現するので、ここでは最小限に
                 if (isLocked) icons += `<i data-lucide="lock" class="w-2 h-2 text-red-500"></i>`;
-                if (attr === 'M') icons += `<span class="text-[8px] font-bold text-blue-500">♂</span>`;
-                if (attr === 'F') icons += `<span class="text-[8px] font-bold text-pink-500">♀</span>`;
+                if (!student) { // 生徒がいないときだけ属性を表示（生徒がいたら色でわかるため）
+                    if (attr === 'M') icons += `<span class="text-[8px] font-bold text-blue-500">♂</span>`;
+                    if (attr === 'F') icons += `<span class="text-[8px] font-bold text-pink-500">♀</span>`;
+                }
 
                 // aspect-[3/2] で横長（縦幅縮小）に
                 gridCells += `
-                    <div onclick="handleSeatClick(${i})" class="seat-cell aspect-[3/2] rounded border shadow-sm flex flex-col items-center justify-center cursor-pointer relative group border-gray-300 hover:border-gray-500 ${bgColor} ${ringColor} print:border-gray-800 print:shadow-none print:ring-0 overflow-hidden">
+                    <div onclick="handleSeatClick(${i})" class="seat-cell aspect-[3/2] rounded border shadow-sm flex flex-col items-center justify-center cursor-pointer relative group border-gray-300 hover:border-gray-500 ${bgColor} ${ringColor} print:border-gray-800 print:shadow-none print:ring-0 overflow-hidden" style="${style}">
                         <div class="absolute top-0.5 left-0.5 flex gap-0.5 z-10">${icons}</div>
                         ${content}
                     </div>
@@ -723,7 +739,7 @@
 
             return `
                 ${sidebar}
-                <main class="flex-1 bg-gray-100 p-2 overflow-y-auto flex flex-col items-center justify-start min-h-0">
+                <main class="flex-1 bg-gray-100 p-2 overflow-y-auto flex flex-col items-center justify-start min-h-0 pb-[100px]">
                     <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-full h-auto min-h-full">
                         ${state.blackboardPosition === 'top' ? blackboard : ''}
                         <div class="seat-grid grid gap-1 p-1 bg-white rounded-lg shadow-inner w-full h-full" 
@@ -741,14 +757,14 @@
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
             const controls = `
-            <div class="fixed bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/90 to-transparent opacity-0 hover:opacity-100 transition-opacity z-50 flex justify-center items-center gap-2 print:hidden h-16">
-                <button onclick="setMode('teacher')" class="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-xs rounded backdrop-blur">設定</button>
-                <button onclick="toggleBlackboard()" class="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-xs rounded backdrop-blur"><i data-lucide="arrow-up-down" class="w-3 h-3"></i> 黒板</button>
-                <button onclick="toggleSound()" class="p-1 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur"><i data-lucide="${state.isSoundEnabled ? 'volume-2' : 'volume-x'}" class="w-3.5 h-3.5"></i></button>
-                <div class="w-px h-6 bg-white/20 mx-1"></div>
-                <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-500 text-white rounded shadow font-bold flex items-center gap-1 transition-all active:scale-95 text-xs"><i data-lucide="shuffle" class="w-3.5 h-3.5"></i> 席替え</button>
-                <button onclick="drumRollReveal()" ${state.isShuffling ? 'disabled' : ''} class="px-3 py-1 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-500 text-black font-bold text-xs rounded shadow flex items-center gap-1 transition-all active:scale-95">公開</button>
-                <button onclick="revealAll()" ${state.isShuffling ? 'disabled' : ''} class="px-4 py-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 text-white font-bold rounded shadow transition-all active:scale-95 text-xs">一斉</button>
+            <div class="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/90 to-transparent opacity-0 hover:opacity-100 transition-opacity z-50 flex justify-center items-center gap-4 print:hidden h-24">
+                <button onclick="setMode('teacher')" class="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-base rounded backdrop-blur font-bold">設定</button>
+                <button onclick="toggleBlackboard()" class="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-base rounded backdrop-blur font-bold"><i data-lucide="arrow-up-down" class="w-5 h-5"></i></button>
+                <button onclick="toggleSound()" class="p-3 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur"><i data-lucide="${state.isSoundEnabled ? 'volume-2' : 'volume-x'}" class="w-5 h-5"></i></button>
+                <div class="w-px h-10 bg-white/20 mx-2"></div>
+                <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-500 text-white rounded shadow-lg font-bold flex items-center gap-2 transition-all active:scale-95 text-base"><i data-lucide="shuffle" class="w-5 h-5"></i> 席替え</button>
+                <button onclick="drumRollReveal()" ${state.isShuffling ? 'disabled' : ''} class="px-6 py-3 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-500 text-black font-bold text-base rounded shadow-lg flex items-center gap-2 transition-all active:scale-95">公開</button>
+                <button onclick="revealAll()" ${state.isShuffling ? 'disabled' : ''} class="px-8 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 text-white font-bold rounded shadow-lg transition-all active:scale-95 text-base">一斉</button>
             </div>`;
 
             const blackboard = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
@@ -808,7 +824,7 @@
             return `
                 <div class="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans">
                     <div class="absolute inset-0 pointer-events-none opacity-10 bg-repeat" style="background-image: radial-gradient(circle, #ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
-                    <div class="flex-1 w-full p-1 md:p-2 flex flex-col items-center justify-center overflow-hidden z-10 pb-20">
+                    <div class="flex-1 w-full p-1 md:p-2 flex flex-col items-center justify-center overflow-hidden z-10 pb-[100px]">
                         ${state.blackboardPosition === 'top' ? blackboard : ''}
                         <div class="grid gap-1 md:gap-2 w-full h-full flex-1" style="grid-template-columns: repeat(${state.cols}, minmax(0, 1fr)); grid-template-rows: repeat(${state.rows}, minmax(0, 1fr));">
                             ${gridCells}
