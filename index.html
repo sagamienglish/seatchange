@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>席替えくん</title>
+    <title>高校席替えアプリ</title>
     
     <!-- Tailwind CSS (デザイン用) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -529,7 +529,7 @@
                                     grid.style.display = 'grid';
                                     grid.style.gap = '20px'; // 隙間を広めに
                                     grid.style.gridTemplateColumns = `repeat(${state.cols}, 1fr)`;
-                                    // 行の高さも確保
+                                    // 行の高さも確保 (60px -> 140pxに拡張して保存)
                                     grid.style.gridTemplateRows = `repeat(${state.rows}, minmax(140px, auto))`;
                                 }
                                 
@@ -684,9 +684,11 @@
                 <button onclick="toggleBlackboard()" class="w-full py-1 bg-white border rounded hover:bg-gray-50 flex items-center justify-center gap-1 text-gray-700 text-xs"><i data-lucide="arrow-up-down" class="w-3 h-3"></i> 黒板: ${state.blackboardPosition === 'top' ? '上' : '下'}</button>
             </aside>`;
 
-            // メインエリア (スクロール可 + 座席サイズ固定)
-            const blackboard = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
-            
+            // メインエリア (スクロール可 + 座席サイズ120x60)
+            const blackboardTop = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
+            // 黒板が下の時はチョーク位置（重力）を考慮して上側に配置
+            const blackboardBottom = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mt-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute top-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
+
             let gridCells = '';
             displayIndices.forEach(i => {
                 const studentId = state.seats[i];
@@ -712,7 +714,8 @@
                 if (!isSwapping) {
                     if (student) {
                         bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
-                        // if (isLocked) { ringColor = 'ring-2 ring-red-500 z-10'; } // ロック枠線を削除
+                        // 席替え実行後はロック枠線を消すが、内部データはlockedのまま
+                        // ここでロックの視覚表示は行わない（ご要望）
                     } else {
                         if (isLocked) { bgColor = 'bg-white'; ringColor = 'ring-1 ring-red-400'; }
                         else if (attr === 'EMPTY') { bgColor = 'bg-gray-200'; }
@@ -739,8 +742,7 @@
                     if (attr === 'F') icons += `<span class="text-[8px] font-bold text-pink-500">♀</span>`;
                 }
 
-                // 固定サイズ（min-width/height指定でスクロールさせる）
-                // aspect-auto にして min-height/width を指定
+                // サイズ固定 (120px x 60px)
                 gridCells += `
                     <div onclick="handleSeatClick(${i})" class="seat-cell rounded border shadow-sm flex flex-col items-center justify-center cursor-pointer relative group border-gray-300 hover:border-gray-500 ${bgColor} ${ringColor} print:border-gray-800 print:shadow-none print:ring-0 overflow-hidden" style="${style}">
                         <div class="absolute top-0.5 left-0.5 flex gap-0.5 z-10">${icons}</div>
@@ -749,16 +751,19 @@
                 `;
             });
 
+            // メインエリアのflex-colの方向を黒板位置に合わせて制御
+            const flexDir = state.blackboardPosition === 'top' ? 'flex-col' : 'flex-col-reverse justify-end';
+
             return `
                 ${sidebar}
-                <main class="flex-1 bg-gray-100 p-2 overflow-y-auto flex flex-col items-center justify-start min-h-0 pb-[100px]">
-                    <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-auto h-auto min-h-full">
-                        ${state.blackboardPosition === 'top' ? blackboard : ''}
-                        <div class="seat-grid grid gap-1 p-1 bg-white rounded-lg shadow-inner w-full h-full" 
-                             style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 90px);">
+                <main class="flex-1 bg-gray-100 p-2 overflow-y-auto flex ${flexDir} items-center min-h-0 pb-[100px]">
+                    <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-auto h-auto">
+                        ${state.blackboardPosition === 'top' ? blackboardTop : ''}
+                        <div class="seat-grid grid gap-1 p-1 bg-white rounded-lg shadow-inner" 
+                             style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">
                             ${gridCells}
                         </div>
-                        ${state.blackboardPosition === 'bottom' ? blackboard.replace('mb-2', 'mt-2') : ''}
+                        ${state.blackboardPosition === 'bottom' ? blackboardBottom : ''}
                     </div>
                 </main>
             `;
@@ -785,7 +790,8 @@
             <button onclick="toggleControls(true)" class="${showBtnVisible} fixed bottom-4 right-4 p-3 bg-gray-800/50 text-white rounded-full shadow-lg z-40 hover:bg-gray-800/80"><i data-lucide="chevron-up" class="w-6 h-6"></i></button>
             `;
 
-            const blackboard = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
+            const blackboardTop = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
+            const blackboardBottom = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mt-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute top-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
 
             let gridCells = '';
             displayIndices.forEach(originalIndex => {
@@ -839,15 +845,17 @@
                 `;
             });
 
+            const flexDir = state.blackboardPosition === 'top' ? 'flex-col' : 'flex-col-reverse justify-end';
+
             return `
                 <div class="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans">
                     <div class="absolute inset-0 pointer-events-none opacity-10 bg-repeat" style="background-image: radial-gradient(circle, #ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
-                    <div class="flex-1 w-full p-1 md:p-2 flex flex-col items-center justify-center overflow-hidden z-10 pb-[100px]">
-                        ${state.blackboardPosition === 'top' ? blackboard : ''}
+                    <div class="flex-1 w-full p-1 md:p-2 flex ${flexDir} items-center justify-center overflow-hidden z-10 pb-[100px]">
+                        ${state.blackboardPosition === 'top' ? blackboardTop : ''}
                         <div class="grid gap-1 md:gap-2 w-full h-full flex-1" style="grid-template-columns: repeat(${state.cols}, minmax(0, 1fr)); grid-template-rows: repeat(${state.rows}, minmax(0, 1fr));">
                             ${gridCells}
                         </div>
-                        ${state.blackboardPosition === 'bottom' ? blackboard.replace('mb-2', 'mt-2') : ''}
+                        ${state.blackboardPosition === 'bottom' ? blackboardBottom : ''}
                     </div>
                     ${controls}
                 </div>
