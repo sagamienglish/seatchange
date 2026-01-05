@@ -50,7 +50,7 @@
 <body class="bg-gray-100 text-gray-800 font-sans h-screen overflow-hidden flex flex-col">
 
     <!-- アプリのルート要素 -->
-    <div id="app" class="h-full w-full overflow-hidden">
+    <div id="app" class="h-full w-full flex flex-col md:flex-row overflow-hidden">
         <!-- ここにJSでコンテンツを描画します -->
     </div>
 
@@ -134,7 +134,8 @@
             importError: '',
             isRosterOpen: true, // デフォルトで開く
             isSoundEnabled: true,
-            isStudentControlsVisible: true // 生徒モードのコントロール表示状態
+            isStudentControlsVisible: true, // 生徒モードのコントロール表示状態
+            isSidebarCollapsed: false // 教員モードのサイドバー折りたたみ状態
         };
 
         // --- Web Audio API (音生成) ---
@@ -371,6 +372,11 @@
             render();
         }
 
+        window.toggleSidebar = () => {
+            state.isSidebarCollapsed = !state.isSidebarCollapsed;
+            render();
+        }
+
         window.handleSeatClick = (index) => {
             if (state.activeTool === 'CURSOR') {
                 openSeatModal(index);
@@ -604,12 +610,11 @@
             const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
-            // ヘッダー
+            // ヘッダー (アイコン削除、タイトル変更)
             const header = `
                 <header class="w-full h-14 bg-white border-b px-4 flex justify-between items-center shadow-sm shrink-0 print:hidden z-30">
                     <div class="flex items-center gap-2">
-                        <i data-lucide="settings" class="text-gray-700 w-5 h-5"></i>
-                        <h1 class="font-bold text-gray-700 text-base md:text-lg">高校席替えアプリ（教員用設定）</h1>
+                        <h1 class="font-bold text-gray-700 text-base md:text-lg">席替えくん</h1>
                     </div>
                     <div class="flex gap-2">
                         <!-- PC用生徒モードボタン -->
@@ -626,71 +631,91 @@
                 </header>
             `;
 
-            // サイドバー
+            // サイドバー (幅可変)
+            const sidebarWidth = state.isSidebarCollapsed ? 'w-16' : 'w-full md:w-64';
+            const hideWhenCollapsed = state.isSidebarCollapsed ? 'hidden' : '';
+            const btnClassNormal = 'flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white px-2 py-1.5 rounded font-bold shadow-sm text-xs w-full';
+            const btnClassCollapsed = 'flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white p-2 rounded font-bold shadow-sm';
+            
+            const clearBtnClassNormal = 'flex items-center justify-center gap-1 bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1.5 rounded font-bold shadow-sm text-xs w-full';
+            const clearBtnClassCollapsed = 'flex items-center justify-center bg-red-100 hover:bg-red-200 text-red-700 p-2 rounded font-bold shadow-sm';
+
             const sidebar = `
-            <aside class="w-full md:w-64 bg-white border-b md:border-r md:border-b-0 p-2 overflow-y-auto print:hidden shadow-inner flex flex-col gap-2 shrink-0 h-auto md:h-full max-h-[40vh] md:max-h-full z-20">
+            <aside class="${sidebarWidth} bg-white border-b md:border-r md:border-b-0 p-2 overflow-y-auto print:hidden shadow-inner flex flex-col gap-2 shrink-0 h-auto md:h-full max-h-[40vh] md:max-h-full z-20 transition-all duration-300">
+                <div class="hidden md:flex justify-end">
+                    <button onclick="toggleSidebar()" class="text-gray-500 hover:text-gray-700"><i data-lucide="${state.isSidebarCollapsed ? 'chevron-right' : 'chevron-left'}" class="w-4 h-4"></i></button>
+                </div>
+
                 <div class="hidden md:flex flex-col gap-2">
-                    <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white px-2 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="shuffle" class="w-3.5 h-3.5"></i> 席替え実行</button>
-                    <button onclick="clearSeats()" class="flex items-center justify-center gap-1 bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="eraser" class="w-3.5 h-3.5"></i> クリア</button>
-                    <div class="flex gap-1">
+                    <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="${state.isSidebarCollapsed ? btnClassCollapsed : btnClassNormal}" title="席替え実行">
+                        <i data-lucide="shuffle" class="w-4 h-4"></i> ${state.isSidebarCollapsed ? '' : '席替え実行'}
+                    </button>
+                    <button onclick="clearSeats()" class="${state.isSidebarCollapsed ? clearBtnClassCollapsed : clearBtnClassNormal}" title="クリア">
+                        <i data-lucide="eraser" class="w-4 h-4"></i> ${state.isSidebarCollapsed ? '' : 'クリア'}
+                    </button>
+                    
+                    <div class="${hideWhenCollapsed} flex gap-1">
                         <button onclick="window.print()" class="flex-1 flex items-center justify-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1.5 rounded font-bold text-xs"><i data-lucide="printer" class="w-3 h-3"></i> 印刷</button>
                         <div class="relative flex-1">
                             <button onclick="toggleSaveMenu()" class="w-full flex items-center justify-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1.5 rounded font-bold text-xs"><i data-lucide="download" class="w-3 h-3"></i> 保存</button>
                             ${state.showSaveMenu ? renderSaveMenu() : ''}
                         </div>
                     </div>
+                    <button onclick="setMode('student')" class="${hideWhenCollapsed} flex items-center justify-center gap-1 bg-teal-600 hover:bg-teal-700 text-white px-2 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="monitor" class="w-3.5 h-3.5"></i> 生徒モード</button>
                 </div>
 
-                <section class="bg-indigo-50 p-2 rounded border border-indigo-100 text-xs">
-                    <h2 class="font-bold text-indigo-800 uppercase mb-1 flex items-center"><i data-lucide="paint-bucket" class="mr-1 w-3 h-3"></i> 一括設定</h2>
-                    <div class="grid grid-cols-4 gap-1">
-                        ${renderToolButton('CURSOR', 'mouse-pointer-2', '選択', 'bg-white shadow text-indigo-700 font-bold')}
-                        ${renderToolButton('EMPTY', 'user-x', '空席', 'bg-gray-600 text-white shadow font-bold')}
-                        ${renderToolButton('M', null, '男子', 'bg-blue-500 text-white shadow font-bold', '♂')}
-                        ${renderToolButton('F', null, '女子', 'bg-pink-500 text-white shadow font-bold', '♀')}
-                    </div>
-                    <div class="mt-1">
-                        ${renderToolButton('SWAP', 'arrow-left-right', '入れ替え', 'bg-orange-500 text-white shadow font-bold')}
-                    </div>
-                </section>
-
-                <section class="text-xs border rounded p-2 bg-gray-50">
-                    <div class="flex justify-between items-center cursor-pointer" onclick="toggleRoster()">
-                        <h2 class="font-bold text-gray-600 flex items-center"><i data-lucide="users" class="mr-1 w-3 h-3"></i> 名簿編集</h2>
-                        <i data-lucide="${state.isRosterOpen ? 'chevron-down' : 'chevron-right'}" class="w-3.5 h-3.5"></i>
-                    </div>
-                    ${state.isRosterOpen ? `
-                        <div class="mt-2 space-y-2">
-                            <div>
-                                <div class="flex gap-1 mb-1">
-                                    <input type="text" placeholder="Spreadsheet URL" class="w-full p-1 border rounded" value="${state.importUrl}" oninput="updateImportUrl(this.value)">
-                                    <button onclick="runUrlImport()" class="bg-green-600 text-white p-1 rounded"><i data-lucide="link" class="w-3 h-3"></i></button>
-                                </div>
-                                ${state.importError ? `<p class="text-red-500 text-[10px]">${state.importError}</p>` : ''}
-                            </div>
-                            <textarea class="w-full h-24 p-1 border rounded font-mono text-[10px]" oninput="updateImportText(this.value)" placeholder="1, 佐藤, 男">${state.importText}</textarea>
-                            <button onclick="runImport()" class="w-full py-1 bg-gray-200 hover:bg-gray-300 rounded flex items-center justify-center gap-1 font-bold"><i data-lucide="refresh-cw" class="w-2.5 h-2.5"></i> 更新</button>
+                <div class="${hideWhenCollapsed}">
+                    <section class="bg-indigo-50 p-2 rounded border border-indigo-100 text-xs mb-2">
+                        <h2 class="font-bold text-indigo-800 uppercase mb-1 flex items-center"><i data-lucide="paint-bucket" class="mr-1 w-3 h-3"></i> 一括設定</h2>
+                        <div class="grid grid-cols-4 gap-1">
+                            ${renderToolButton('CURSOR', 'mouse-pointer-2', '選択', 'bg-white shadow text-indigo-700 font-bold')}
+                            ${renderToolButton('EMPTY', 'user-x', '空席', 'bg-gray-600 text-white shadow font-bold')}
+                            ${renderToolButton('M', null, '男子', 'bg-blue-500 text-white shadow font-bold', '♂')}
+                            ${renderToolButton('F', null, '女子', 'bg-pink-500 text-white shadow font-bold', '♀')}
                         </div>
-                    ` : ''}
-                </section>
+                        <div class="mt-1">
+                            ${renderToolButton('SWAP', 'arrow-left-right', '入れ替え', 'bg-orange-500 text-white shadow font-bold')}
+                        </div>
+                    </section>
 
-                <div class="text-xs">
-                    <h2 class="font-bold text-gray-500 uppercase mb-1 flex items-center"><i data-lucide="grid" class="mr-1 w-3 h-3"></i> 配置</h2>
-                    <div class="flex gap-1 mb-1 items-center">
-                        <label class="w-6">横</label>
-                        <button onclick="updateCols(${state.cols - 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">-</button>
-                        <input type="number" min="1" max="12" value="${state.cols}" onchange="updateCols(this.value)" class="w-8 p-0.5 border rounded text-center">
-                        <button onclick="updateCols(${state.cols + 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">+</button>
+                    <section class="text-xs border rounded p-2 bg-gray-50 mb-2">
+                        <div class="flex justify-between items-center cursor-pointer" onclick="toggleRoster()">
+                            <h2 class="font-bold text-gray-600 flex items-center"><i data-lucide="users" class="mr-1 w-3 h-3"></i> 名簿編集</h2>
+                            <i data-lucide="${state.isRosterOpen ? 'chevron-down' : 'chevron-right'}" class="w-3.5 h-3.5"></i>
+                        </div>
+                        ${state.isRosterOpen ? `
+                            <div class="mt-2 space-y-2">
+                                <div>
+                                    <div class="flex gap-1 mb-1">
+                                        <input type="text" placeholder="Spreadsheet URL" class="w-full p-1 border rounded" value="${state.importUrl}" oninput="updateImportUrl(this.value)">
+                                        <button onclick="runUrlImport()" class="bg-green-600 text-white p-1 rounded"><i data-lucide="link" class="w-3 h-3"></i></button>
+                                    </div>
+                                    ${state.importError ? `<p class="text-red-500 text-[10px]">${state.importError}</p>` : ''}
+                                </div>
+                                <textarea class="w-full h-24 p-1 border rounded font-mono text-[10px]" oninput="updateImportText(this.value)" placeholder="1, 佐藤, 男">${state.importText}</textarea>
+                                <button onclick="runImport()" class="w-full py-1 bg-gray-200 hover:bg-gray-300 rounded flex items-center justify-center gap-1 font-bold"><i data-lucide="refresh-cw" class="w-2.5 h-2.5"></i> 更新</button>
+                            </div>
+                        ` : ''}
+                    </section>
+
+                    <div class="text-xs mb-2">
+                        <h2 class="font-bold text-gray-500 uppercase mb-1 flex items-center"><i data-lucide="grid" class="mr-1 w-3 h-3"></i> 配置</h2>
+                        <div class="flex gap-1 mb-1 items-center">
+                            <label class="w-6">横</label>
+                            <button onclick="updateCols(${state.cols - 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">-</button>
+                            <input type="number" min="1" max="12" value="${state.cols}" onchange="updateCols(this.value)" class="w-8 p-0.5 border rounded text-center">
+                            <button onclick="updateCols(${state.cols + 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">+</button>
+                        </div>
+                        <div class="flex gap-1 items-center">
+                            <label class="w-6">縦</label>
+                            <button onclick="updateRows(${state.rows - 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">-</button>
+                            <input type="number" min="1" max="12" value="${state.rows}" onchange="updateRows(this.value)" class="w-8 p-0.5 border rounded text-center">
+                            <button onclick="updateRows(${state.rows + 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">+</button>
+                        </div>
                     </div>
-                    <div class="flex gap-1 items-center">
-                        <label class="w-6">縦</label>
-                        <button onclick="updateRows(${state.rows - 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">-</button>
-                        <input type="number" min="1" max="12" value="${state.rows}" onchange="updateRows(this.value)" class="w-8 p-0.5 border rounded text-center">
-                        <button onclick="updateRows(${state.rows + 1})" class="px-1.5 py-0.5 bg-gray-200 rounded hover:bg-gray-300 font-bold">+</button>
-                    </div>
+                    
+                    <button onclick="toggleBlackboard()" class="w-full py-1 bg-white border rounded hover:bg-gray-50 flex items-center justify-center gap-1 text-gray-700 text-xs"><i data-lucide="arrow-up-down" class="w-3 h-3"></i> 黒板: ${state.blackboardPosition === 'top' ? '上' : '下'}</button>
                 </div>
-                
-                <button onclick="toggleBlackboard()" class="w-full py-1 bg-white border rounded hover:bg-gray-50 flex items-center justify-center gap-1 text-gray-700 text-xs"><i data-lucide="arrow-up-down" class="w-3 h-3"></i> 黒板: ${state.blackboardPosition === 'top' ? '上' : '下'}</button>
             </aside>`;
 
             // メインエリア (スクロール可 + 座席サイズ120x60)
@@ -768,7 +793,7 @@
                     ${header}
                     <div class="flex flex-1 overflow-hidden flex-col md:flex-row">
                         ${sidebar}
-                        <main class="flex-1 p-2 overflow-y-auto flex ${flexDir} items-center min-h-0 pb-[100px] pt-[120px]">
+                        <main class="flex-1 p-2 overflow-y-auto flex ${flexDir} items-center min-h-0 pb-[100px] pt-4">
                             <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-auto h-auto min-h-full">
                                 ${state.blackboardPosition === 'top' ? blackboardTop : ''}
                                 <div class="seat-grid grid gap-1 p-1 bg-white rounded-lg shadow-inner" 
