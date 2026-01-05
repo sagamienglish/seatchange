@@ -1,0 +1,770 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Settings, Users, Shuffle, Monitor, Printer, RefreshCw, Grid, Lock, Unlock, ArrowUpDown, Volume2, VolumeX, User, UserX, CheckCircle, XCircle, MousePointer2, PaintBucket, Link as LinkIcon, AlertCircle, Download, FileText, Image as ImageIcon } from 'lucide-react';
+
+// --- Web Audio API (音生成: オシャレ版) ---
+const useSound = () => {
+  const [audioCtx, setAudioCtx] = useState(null);
+  const [enabled, setEnabled] = useState(true);
+
+  useEffect(() => {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) {
+      const ctx = new AudioContext();
+      setAudioCtx(ctx);
+    }
+  }, []);
+
+  const playTone = useCallback((freq, type, duration, startTime = 0, vol = 0.1) => {
+    if (!audioCtx || !enabled) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime + startTime);
+    
+    gain.gain.setValueAtTime(0, audioCtx.currentTime + startTime);
+    gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + startTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    
+    osc.start(audioCtx.currentTime + startTime);
+    osc.stop(audioCtx.currentTime + startTime + duration);
+  }, [audioCtx, enabled]);
+
+  // 効果音プリセット
+  const playFlip = () => {
+     const freq = 1000 + Math.random() * 200; 
+     playTone(freq, 'sine', 0.1, 0, 0.08);
+  };
+  
+  const playDrumroll = () => {
+    if (!audioCtx || !enabled) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const count = 12;
+    for (let i = 0; i < count; i++) {
+       const freq = 150 + (i * 25);
+       playTone(freq, 'triangle', 0.1, i * 0.10, 0.15);
+    }
+  };
+
+  const playTada = () => {
+    if (!audioCtx || !enabled) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const notes = [523.25, 659.25, 783.99, 987.77, 1174.66]; 
+    notes.forEach((freq, i) => {
+        playTone(freq, 'triangle', 1.8, i * 0.06, 0.15);
+        playTone(freq * 2, 'sine', 1.2, i * 0.06, 0.05);
+    });
+  };
+
+  return { playFlip, playDrumroll, playTada, enabled, setEnabled };
+};
+
+
+// --- サンプルデータ ---
+const INITIAL_STUDENTS_TEXT = `1, 佐藤 健, 男
+2, 鈴木 愛, 女
+3, 高橋 翔, 男
+4, 田中 美咲, 女
+5, 伊藤 翼, 男
+6, 渡辺 結衣, 女
+7, 山本 蓮, 男
+8, 中村 陽菜, 女
+9, 小林 湊, 男
+10, 加藤 葵, 女
+11, 吉田 樹, 男
+12, 山田 凛, 女
+13, 佐々木 陸, 男
+14, 山口 澪, 女
+15, 松本 蒼, 男
+16, 井上 紬, 女
+17, 木村 大和, 男
+18, 林 杏奈, 女
+19, 斎藤 悠真, 男
+20, 清水 桜, 女
+21, 山崎 瑛太, 男
+22, 池田 楓, 女
+23, 橋本 朝陽, 男
+24, 阿部 菫, 女
+25, 宮本 琉生, 男
+26, 石川 陽菜, 女
+27, 中川 湊斗, 男
+28, 野口 結菜, 女
+29, 酒井 大翔, 男
+30, 村上 莉子, 女
+31, 小川 悠人, 男
+32, 長谷川 咲良, 女
+33, 岡田 陽向, 男
+34, 藤田 結衣, 女
+35, 後藤 陸, 男
+36, 近藤 陽菜, 女
+37, 石井 湊, 男
+38, 小島 葵, 女
+39, 遠藤 樹, 男
+40, 青木 凛, 女
+41, 藤井 陸, 男
+42, 西村 澪, 女
+43, 安藤 蒼, 男
+44, 辻 紬, 女
+45, 山下 大和, 男
+46, 岡本 杏奈, 女
+47, 森本 悠真, 男
+48, 今井 桜, 女`;
+
+// --- コンポーネント: アプリ全体 ---
+export default function App() {
+  // --- State ---
+  const [mode, setMode] = useState('teacher'); // 'teacher' | 'student'
+  const [students, setStudents] = useState([]);
+  const [rows, setRows] = useState(8);
+  const [cols, setCols] = useState(6);
+  const [seats, setSeats] = useState([]); // index -> studentId
+  const [lockedSeats, setLockedSeats] = useState({}); // index -> boolean
+  const [seatAttributes, setSeatAttributes] = useState({}); // index -> 'M' | 'F' | 'EMPTY' | null
+  const [importText, setImportText] = useState(INITIAL_STUDENTS_TEXT);
+  const [importUrl, setImportUrl] = useState('');
+  const [revealState, setRevealState] = useState({});
+  const [blackboardPosition, setBlackboardPosition] = useState('top');
+  const [isShuffling, setIsShuffling] = useState(false);
+  
+  // 編集ツール
+  const [activeTool, setActiveTool] = useState('CURSOR');
+  // モーダル・メニュー
+  const [editingSeatIndex, setEditingSeatIndex] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSaveMenu, setShowSaveMenu] = useState(false);
+  
+  // エラー
+  const [importError, setImportError] = useState('');
+
+  // 参照
+  const captureRef = useRef(null); // 画像保存用の参照
+
+  // 音声フック
+  const { playFlip, playDrumroll, playTada, enabled: isSoundEnabled, setEnabled: setIsSoundEnabled } = useSound();
+
+  // --- 初期化 ---
+  useEffect(() => {
+    parseStudents(INITIAL_STUDENTS_TEXT);
+  }, []);
+
+  // 席数変更時のリセット
+  useEffect(() => {
+    const newSize = rows * cols;
+    setSeats(prev => {
+      const newSeats = new Array(newSize).fill(null);
+      for (let i = 0; i < Math.min(prev.length, newSize); i++) {
+        newSeats[i] = prev[i];
+      }
+      return newSeats;
+    });
+    const resizeObj = (prev) => {
+      const next = {};
+      Object.keys(prev).forEach(key => {
+        if (parseInt(key) < newSize) next[key] = prev[key];
+      });
+      return next;
+    };
+    setLockedSeats(prev => resizeObj(prev));
+    setSeatAttributes(prev => resizeObj(prev));
+  }, [rows, cols]);
+
+  // --- ロジック ---
+
+  const parseStudents = (text) => {
+    const lines = text.trim().split('\n');
+    const parsed = lines.map((line, i) => {
+      const parts = line.split(/[,\t]/).map(p => p.trim()).filter(p => p);
+      let number = i + 1;
+      let name = `生徒${i+1}`;
+      let gender = 'M';
+
+      if (parts.length >= 3) {
+         if (!isNaN(parseInt(parts[0]))) {
+           number = parseInt(parts[0]);
+           name = parts[1];
+           gender = (parts[2].includes('女') || parts[2].toLowerCase().includes('f')) ? 'F' : 'M';
+         } else {
+           name = parts[0];
+           gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M';
+         }
+      } else if (parts.length === 2) {
+         if (!isNaN(parseInt(parts[0]))) {
+            number = parseInt(parts[0]);
+            name = parts[1];
+         } else {
+            name = parts[0];
+            gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M';
+         }
+      } else if (parts.length === 1) {
+         name = parts[0];
+      }
+      return { id: `s-${i}`, number, name, gender };
+    });
+    setStudents(parsed);
+  };
+
+  const handleUrlImport = async () => {
+    setImportError('');
+    if (!importUrl) return;
+    let csvUrl = importUrl;
+    const match = importUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match && match[1]) {
+       csvUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv`;
+    } else {
+       setImportError('有効なGoogleスプレッドシートのURLではありません。');
+       return;
+    }
+    try {
+       const response = await fetch(csvUrl);
+       if (!response.ok) throw new Error('アクセスできませんでした。');
+       const text = await response.text();
+       setImportText(text);
+       parseStudents(text);
+       setImportUrl(''); 
+    } catch (e) {
+       console.error(e);
+       setImportError('読み込み失敗。「リンクを知っている全員」に公開してください。');
+    }
+  };
+
+  const shuffleSeatsWithAnimation = () => {
+    if (mode === 'student') {
+      setIsShuffling(true);
+      playDrumroll();
+      setTimeout(() => {
+        shuffleSeatsLogic();
+        setIsShuffling(false);
+        playTada();
+      }, 1500);
+    } else {
+      shuffleSeatsLogic();
+    }
+  };
+
+  const shuffleSeatsLogic = () => {
+    let newSeats = [...seats];
+    const attributeIndices = { M: [], F: [], EMPTY: [], NONE: [] };
+    const lockedStudentIds = new Set();
+
+    for (let i = 0; i < newSeats.length; i++) {
+      if (lockedSeats[i] && newSeats[i]) {
+        lockedStudentIds.add(newSeats[i]);
+      } else {
+        newSeats[i] = null;
+        const attr = seatAttributes[i];
+        if (attr === 'EMPTY') attributeIndices.EMPTY.push(i);
+        else if (attr === 'M') attributeIndices.M.push(i);
+        else if (attr === 'F') attributeIndices.F.push(i);
+        else attributeIndices.NONE.push(i);
+      }
+    }
+
+    let pool = students.filter(s => !lockedStudentIds.has(s.id));
+    let boys = pool.filter(s => s.gender === 'M').sort(() => Math.random() - 0.5);
+    let girls = pool.filter(s => s.gender === 'F').sort(() => Math.random() - 0.5);
+
+    attributeIndices.M.forEach(idx => { if (boys.length > 0) newSeats[idx] = boys.pop().id; });
+    attributeIndices.F.forEach(idx => { if (girls.length > 0) newSeats[idx] = girls.pop().id; });
+    
+    let remaining = [...boys, ...girls].sort(() => Math.random() - 0.5);
+    attributeIndices.NONE.forEach(idx => { if (remaining.length > 0) newSeats[idx] = remaining.pop().id; });
+
+    setSeats(newSeats);
+    setRevealState({});
+  };
+
+  const getStudent = (id) => students.find(s => s.id === id);
+
+  const handleSeatInteract = (index) => {
+    if (activeTool === 'CURSOR') {
+       setEditingSeatIndex(index);
+       setSearchQuery('');
+    } else if (activeTool === 'EMPTY') {
+       if (seatAttributes[index] === 'EMPTY') {
+          setSeatAttributes(prev => ({ ...prev, [index]: null }));
+       } else {
+          setSeatAttributes(prev => ({ ...prev, [index]: 'EMPTY' }));
+          setSeats(prev => { const n = [...prev]; n[index] = null; return n; });
+          setLockedSeats(prev => ({ ...prev, [index]: false }));
+       }
+    } else if (activeTool === 'M') {
+       setSeatAttributes(prev => ({ ...prev, [index]: prev[index] === 'M' ? null : 'M' }));
+       setLockedSeats(prev => ({ ...prev, [index]: false }));
+    } else if (activeTool === 'F') {
+       setSeatAttributes(prev => ({ ...prev, [index]: prev[index] === 'F' ? null : 'F' }));
+       setLockedSeats(prev => ({ ...prev, [index]: false }));
+    }
+  };
+
+  const handleSeatEditModal = (action, payload) => {
+    const index = editingSeatIndex;
+    if (index === null) return;
+    if (action === 'SET_EMPTY') {
+      setSeats(prev => { const n = [...prev]; n[index] = null; return n; });
+      setLockedSeats(prev => ({ ...prev, [index]: false }));
+      setSeatAttributes(prev => ({ ...prev, [index]: 'EMPTY' }));
+    } else if (action === 'SET_ATTRIBUTE') {
+      setSeatAttributes(prev => ({ ...prev, [index]: payload }));
+      setLockedSeats(prev => ({ ...prev, [index]: false }));
+      if (payload) setSeats(prev => { const n = [...prev]; n[index] = null; return n; });
+    } else if (action === 'SET_STUDENT') {
+      const currentSeatOfStudent = seats.indexOf(payload);
+      let newSeats = [...seats];
+      if (currentSeatOfStudent !== -1) {
+        newSeats[currentSeatOfStudent] = null;
+        setLockedSeats(prev => ({ ...prev, [currentSeatOfStudent]: false }));
+      }
+      newSeats[index] = payload;
+      setSeats(newSeats);
+      setLockedSeats(prev => ({ ...prev, [index]: true }));
+      setSeatAttributes(prev => ({ ...prev, [index]: null }));
+    }
+    setEditingSeatIndex(null);
+  };
+
+  // 画像保存
+  const handleDownloadImage = async () => {
+     setShowSaveMenu(false);
+     try {
+        if (!captureRef.current) return;
+        
+        // html2canvasを動的ロード
+        if (!window.html2canvas) {
+           await new Promise((resolve, reject) => {
+              const script = document.createElement('script');
+              script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+           });
+        }
+        
+        if (window.html2canvas) {
+           const canvas = await window.html2canvas(captureRef.current, {
+              scale: 2,
+              backgroundColor: '#ffffff',
+              logging: false,
+           });
+           const link = document.createElement('a');
+           link.download = `座席表_${new Date().toLocaleDateString().replace(/\//g, '-')}.png`;
+           link.href = canvas.toDataURL();
+           link.click();
+        }
+     } catch (e) {
+        alert("画像の保存に失敗しました。");
+        console.error(e);
+     }
+  };
+
+  // PDF保存 (jsPDFを使用)
+  const handleDownloadPdf = async () => {
+     setShowSaveMenu(false);
+     try {
+        if (!captureRef.current) return;
+        
+        // ライブラリロード
+        if (!window.html2canvas || !window.jspdf) {
+           await Promise.all([
+              !window.html2canvas && new Promise((resolve) => {
+                  const s = document.createElement('script'); s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"; s.onload = resolve; document.head.appendChild(s);
+              }),
+              !window.jspdf && new Promise((resolve) => {
+                  const s = document.createElement('script'); s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"; s.onload = resolve; document.head.appendChild(s);
+              })
+           ]);
+        }
+        
+        if (window.html2canvas && window.jspdf) {
+           // 画像化
+           const canvas = await window.html2canvas(captureRef.current, {
+              scale: 2,
+              backgroundColor: '#ffffff',
+              logging: false,
+           });
+           const imgData = canvas.toDataURL('image/png');
+           
+           // PDF化
+           const { jsPDF } = window.jspdf;
+           const pdf = new jsPDF({ orientation: 'landscape' });
+           
+           const imgProps = pdf.getImageProperties(imgData);
+           const pdfWidth = pdf.internal.pageSize.getWidth();
+           const pdfHeight = pdf.internal.pageSize.getHeight();
+           
+           // 比率を保ってフィット
+           const widthRatio = pdfWidth / imgProps.width;
+           const heightRatio = pdfHeight / imgProps.height;
+           const ratio = Math.min(widthRatio, heightRatio) * 0.9;
+           
+           const w = imgProps.width * ratio;
+           const h = imgProps.height * ratio;
+           const x = (pdfWidth - w) / 2;
+           const y = (pdfHeight - h) / 2;
+
+           pdf.addImage(imgData, 'PNG', x, y, w, h);
+           pdf.save(`座席表_${new Date().toLocaleDateString().replace(/\//g, '-')}.pdf`);
+        }
+     } catch (e) {
+        alert("PDFの保存に失敗しました。");
+        console.error(e);
+     }
+  };
+
+
+  // --- UI Components ---
+  const Blackboard = ({ className = "" }) => (
+    <div className={`w-full max-w-6xl flex flex-col items-center flex-shrink-0 ${className} print:hidden`}>
+      <div className="w-full h-12 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-1 flex items-center justify-center overflow-hidden rounded-sm">
+        <div className="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div>
+        <div className="absolute bottom-1 right-14 w-12 h-3 bg-yellow-900/60 rounded-sm flex items-center justify-center shadow-sm border border-yellow-900/30"></div>
+      </div>
+    </div>
+  );
+
+  const SeatEditModal = () => {
+    if (editingSeatIndex === null) return null;
+    const currentSeatId = seats[editingSeatIndex];
+    const currentAttr = seatAttributes[editingSeatIndex];
+    const placedStudentIds = new Set(seats.filter(id => id !== null && id !== currentSeatId));
+    const availableStudents = students.filter(s => !placedStudentIds.has(s.id));
+    const filteredStudents = availableStudents.filter(s => 
+      (s.name || '').includes(searchQuery) || (s.gender === 'M' ? '男' : '女').includes(searchQuery)
+    );
+
+    return (
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEditingSeatIndex(null)}>
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+          <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+            <h3 className="font-bold text-lg">座席設定 (No.{editingSeatIndex + 1})</h3>
+            <button onClick={() => setEditingSeatIndex(null)}><XCircle className="text-gray-400 hover:text-gray-600" /></button>
+          </div>
+          <div className="p-4 overflow-y-auto">
+            <p className="text-xs text-gray-500 mb-2">状態を選択:</p>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <button onClick={() => handleSeatEditModal('SET_EMPTY')} className={`p-2 border rounded flex items-center justify-center gap-2 ${currentAttr === 'EMPTY' ? 'bg-gray-200 ring-2' : 'hover:bg-gray-50'}`}>
+                <UserX size={16} /> 空席にする
+              </button>
+              <button onClick={() => handleSeatEditModal('SET_ATTRIBUTE', null)} className={`p-2 border rounded flex items-center justify-center gap-2 ${!currentAttr && !lockedSeats[editingSeatIndex] ? 'bg-white ring-2 ring-indigo-400' : 'hover:bg-gray-50'}`}>
+                <User size={16} /> 指定なし
+              </button>
+              <button onClick={() => handleSeatEditModal('SET_ATTRIBUTE', 'M')} className={`p-2 border rounded flex items-center justify-center gap-2 ${currentAttr === 'M' ? 'bg-blue-100 ring-2' : 'hover:bg-blue-50'}`}>
+                <span className="text-blue-600 font-bold">♂</span> 男子席
+              </button>
+              <button onClick={() => handleSeatEditModal('SET_ATTRIBUTE', 'F')} className={`p-2 border rounded flex items-center justify-center gap-2 ${currentAttr === 'F' ? 'bg-pink-100 ring-2' : 'hover:bg-pink-50'}`}>
+                <span className="text-pink-600 font-bold">♀</span> 女子席
+              </button>
+            </div>
+            <hr className="my-4" />
+            <p className="text-xs text-gray-500 mb-2">生徒を指定して固定:</p>
+            <input type="text" placeholder="名前検索..." className="w-full p-2 border rounded mb-2 text-sm" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+            <div className="h-48 overflow-y-auto border rounded divide-y">
+              {filteredStudents.map(student => (
+                <button key={student.id} onClick={() => handleSeatEditModal('SET_STUDENT', student.id)} className={`w-full p-2 text-left flex justify-between items-center hover:bg-indigo-50 ${currentSeatId === student.id ? 'bg-indigo-100' : ''}`}>
+                  <div className="flex items-center gap-2">
+                     <span className="text-xs text-gray-500 w-6">{student.number}</span>
+                     <span>{student.name}</span>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded ${student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100'}`}>{student.gender === 'M' ? '男' : '女'}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const TeacherDashboard = () => {
+    const displayIndices = Array.from({ length: seats.length }, (_, i) => i);
+    if (blackboardPosition === 'bottom') displayIndices.reverse();
+
+    return (
+      <div className="flex flex-col h-full bg-gray-100 text-gray-800 font-sans">
+        <header className="bg-white border-b px-4 py-2 flex justify-between items-center shadow-sm print:hidden">
+          <h1 className="text-lg font-bold flex items-center text-gray-700">
+            <Settings className="mr-2" size={20} /> 教員用設定
+          </h1>
+          <div className="flex gap-2 relative">
+            <button onClick={shuffleSeatsWithAnimation} className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md font-bold shadow-sm transition-all text-sm">
+              <Shuffle size={16} /> 実行
+            </button>
+            <button onClick={() => window.print()} className="flex items-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-md font-bold transition-all text-sm">
+              <Printer size={16} /> 印刷
+            </button>
+            
+            {/* 保存ボタン */}
+            <div className="relative">
+              <button onClick={() => setShowSaveMenu(!showSaveMenu)} className="flex items-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-md font-bold transition-all text-sm">
+                <Download size={16} /> 保存
+              </button>
+              {showSaveMenu && (
+                 <div className="absolute top-full right-0 mt-1 w-40 bg-white border rounded shadow-xl z-50 py-1">
+                    <button onClick={handleDownloadPdf} className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 text-sm text-gray-700">
+                       <FileText size={16} /> PDFで保存
+                    </button>
+                    <button onClick={handleDownloadImage} className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 text-sm text-gray-700">
+                       <ImageIcon size={16} /> 画像で保存
+                    </button>
+                 </div>
+              )}
+              {showSaveMenu && <div className="fixed inset-0 z-40" onClick={() => setShowSaveMenu(false)}></div>}
+            </div>
+
+            <button onClick={() => setMode('student')} className="flex items-center gap-1 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-md font-bold shadow-sm transition-all text-sm ml-2">
+              <Monitor size={16} /> 生徒モード
+            </button>
+          </div>
+        </header>
+
+        <div className="flex flex-1 overflow-hidden">
+          <aside className="w-72 bg-white border-r p-4 overflow-y-auto print:hidden shadow-inner flex flex-col gap-4">
+            <section className="bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+               <h2 className="text-xs font-bold text-indigo-800 uppercase mb-2 flex items-center">
+                  <PaintBucket size={14} className="mr-1" /> 一括設定ツール
+               </h2>
+               <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => setActiveTool('CURSOR')} className={`p-2 text-xs rounded flex items-center justify-center gap-1 ${activeTool === 'CURSOR' ? 'bg-white shadow text-indigo-700 font-bold' : 'hover:bg-white/50 text-indigo-600'}`}>
+                     <MousePointer2 size={14} /> 選択/詳細
+                  </button>
+                  <button onClick={() => setActiveTool('EMPTY')} className={`p-2 text-xs rounded flex items-center justify-center gap-1 ${activeTool === 'EMPTY' ? 'bg-gray-600 text-white shadow font-bold' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}>
+                     <UserX size={14} /> 空席ペン
+                  </button>
+                  <button onClick={() => setActiveTool('M')} className={`p-2 text-xs rounded flex items-center justify-center gap-1 ${activeTool === 'M' ? 'bg-blue-500 text-white shadow font-bold' : 'bg-blue-100 hover:bg-blue-200 text-blue-700'}`}>
+                     <span className="font-bold">♂</span> 男子席ペン
+                  </button>
+                  <button onClick={() => setActiveTool('F')} className={`p-2 text-xs rounded flex items-center justify-center gap-1 ${activeTool === 'F' ? 'bg-pink-500 text-white shadow font-bold' : 'bg-pink-100 hover:bg-pink-200 text-pink-700'}`}>
+                     <span className="font-bold">♀</span> 女子席ペン
+                  </button>
+               </div>
+               <p className="text-[10px] text-indigo-400 mt-1 text-center">ペンを選んで座席をクリックで連続設定</p>
+            </section>
+
+            <section>
+              <h2 className="text-xs font-bold text-gray-500 uppercase mb-1 flex items-center">
+                <Users size={14} className="mr-1" /> 生徒名簿
+              </h2>
+              <div className="flex gap-1 mb-2">
+                 <input 
+                    type="text" 
+                    placeholder="スプレッドシートURLを貼付" 
+                    className="w-full p-1.5 text-xs border rounded bg-gray-50"
+                    value={importUrl}
+                    onChange={(e) => setImportUrl(e.target.value)}
+                 />
+                 <button onClick={handleUrlImport} className="p-1.5 bg-green-600 text-white rounded hover:bg-green-700">
+                    <LinkIcon size={14} />
+                 </button>
+              </div>
+              {importError && <p className="text-[10px] text-red-500 flex items-center mb-2"><AlertCircle size={10} className="mr-1"/>{importError}</p>}
+              <textarea
+                className="w-full h-24 p-2 text-xs border rounded focus:ring-1 focus:ring-indigo-500 bg-gray-50 font-mono"
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder="1, 佐藤, 男"
+              />
+              <button onClick={() => parseStudents(importText)} className="mt-1 w-full py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs rounded border flex items-center justify-center gap-1">
+                <RefreshCw size={12} /> 名簿更新 ({students.length}名)
+              </button>
+            </section>
+
+            <section>
+              <h2 className="text-xs font-bold text-gray-500 uppercase mb-1 flex items-center">
+                <Grid size={14} className="mr-1" /> レイアウト
+              </h2>
+              <div className="flex gap-2">
+                <label className="block text-xs text-gray-500 flex-1">横 <input type="number" min="1" max="12" value={cols} onChange={(e) => setCols(parseInt(e.target.value)||1)} className="w-full p-1 border rounded mt-0.5"/></label>
+                <label className="block text-xs text-gray-500 flex-1">縦 <input type="number" min="1" max="12" value={rows} onChange={(e) => setRows(parseInt(e.target.value)||1)} className="w-full p-1 border rounded mt-0.5"/></label>
+              </div>
+              <p className="text-xs text-right text-gray-400 mt-0.5">計 {rows * cols} 席</p>
+            </section>
+            
+            <section>
+               <h2 className="text-xs font-bold text-gray-500 uppercase mb-1">表示設定</h2>
+               <button onClick={() => setBlackboardPosition(prev => prev === 'top' ? 'bottom' : 'top')} className="w-full py-1.5 bg-white border rounded hover:bg-gray-50 flex items-center justify-center gap-2 text-sm text-gray-700 transition-colors">
+                  <ArrowUpDown size={16} /> 黒板の位置: {blackboardPosition === 'top' ? '上' : '下'}
+               </button>
+            </section>
+          </aside>
+
+          <main className="flex-1 bg-gray-100 p-4 overflow-auto flex flex-col items-center justify-start print:p-0 print:bg-white">
+            <div ref={captureRef} className="flex flex-col items-center bg-gray-100 p-4 rounded-xl print:p-0 print:bg-white">
+                {blackboardPosition === 'top' ? <Blackboard className="mb-2" /> : null}
+                <div className="grid gap-2 print:gap-2 p-4 bg-white rounded-xl shadow-inner transition-all" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, width: '100%', maxWidth: '1000px' }}>
+                  {displayIndices.map((originalIndex) => {
+                    const i = originalIndex;
+                    const studentId = seats[i];
+                    const student = studentId ? getStudent(studentId) : null;
+                    const isLocked = lockedSeats[i];
+                    const attr = seatAttributes[i];
+                    
+                    let bgColor = 'bg-gray-50';
+                    let ringColor = '';
+                    if (isLocked) { bgColor = 'bg-white'; ringColor = 'ring-2 ring-red-400 ring-offset-1'; }
+                    else if (attr === 'EMPTY') { bgColor = 'bg-gray-200'; }
+                    else if (attr === 'M') { bgColor = 'bg-blue-50 border-blue-300 border-2 border-dashed'; }
+                    else if (attr === 'F') { bgColor = 'bg-pink-50 border-pink-300 border-2 border-dashed'; }
+                    else if (student) { bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100'; }
+
+                    return (
+                      <div key={i} onClick={() => handleSeatInteract(i)} className={`aspect-[5/4] rounded-md border shadow-sm flex flex-col items-center justify-center p-1 cursor-pointer transition-all relative group border-gray-300 hover:border-gray-500 hover:shadow-md ${bgColor} ${ringColor} print:border-gray-800 print:shadow-none print:ring-0`}>
+                        <div className="absolute top-1 left-1 flex gap-0.5">
+                          {isLocked && <Lock size={12} className="text-red-500" />}
+                          {attr === 'M' && <span className="text-[10px] font-bold text-blue-500">♂</span>}
+                          {attr === 'F' && <span className="text-[10px] font-bold text-pink-500">♀</span>}
+                        </div>
+                        <div className="absolute top-0.5 left-0 right-0 h-1 bg-black/5 mx-2 rounded-full"></div>
+                        
+                        <div className="w-full text-center mt-2">
+                            {student ? (
+                                <>
+                                    <span className="block text-[10px] text-gray-500 font-bold mb-0.5">{student.number}</span>
+                                    <div className="text-sm md:text-base lg:text-lg font-bold text-gray-800 leading-tight w-full break-words px-1 print:text-black">
+                                        {student.name}
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="block text-[10px] text-gray-300 font-bold mb-0.5">{i + 1}</span>
+                                    <span className="text-gray-300 font-bold text-xs block min-h-[1.5em] flex items-center justify-center">
+                                        {attr === 'EMPTY' ? '空席' : '未定'}
+                                    </span>
+                                </>
+                            )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {blackboardPosition === 'bottom' ? <Blackboard className="mt-2" /> : null}
+            </div>
+          </main>
+        </div>
+        <SeatEditModal />
+      </div>
+    );
+  };
+
+  const StudentView = () => {
+    const displayIndices = Array.from({ length: seats.length }, (_, i) => i);
+    if (blackboardPosition === 'bottom') displayIndices.reverse();
+
+    const revealAll = () => {
+      playTada();
+      const newState = {};
+      seats.forEach((_, i) => newState[i] = true);
+      setRevealState(newState);
+    };
+
+    const drumRollReveal = () => {
+      playDrumroll();
+      setRevealState({});
+      const unrevealedIndices = seats.map((_, i) => i).sort(() => Math.random() - 0.5);
+      unrevealedIndices.forEach((index, i) => {
+        setTimeout(() => {
+          setRevealState(prev => ({ ...prev, [index]: true }));
+          playFlip();
+        }, i * 300 + 1000); 
+      });
+    };
+
+    const toggleCard = (index) => {
+      playFlip();
+      setRevealState(prev => ({ ...prev, [index]: !prev[index] }));
+    };
+    
+    const blackboard = <Blackboard className="mb-0 flex-shrink-0" />;
+    
+    const grid = (
+       <div className="grid gap-2 md:gap-3 w-full max-w-7xl pb-24 flex-1" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+          {displayIndices.map((originalIndex) => {
+            const i = originalIndex;
+            const studentId = seats[i];
+            const student = studentId ? getStudent(studentId) : null;
+            const isRevealed = revealState[i];
+            const attr = seatAttributes[i];
+            
+            if (!student && (attr === 'EMPTY' || !studentId)) {
+               return (
+                  <div key={i} className="aspect-[5/4] border-2 border-dashed border-white/5 rounded-md flex items-center justify-center opacity-50">
+                     <span className="text-white/20 text-xs">×</span>
+                  </div>
+               );
+            }
+
+            const randomX = isShuffling ? (Math.random() - 0.5) * 200 : 0;
+            const randomY = isShuffling ? (Math.random() - 0.5) * 200 : 0;
+            const randomRotate = isShuffling ? (Math.random() - 0.5) * 360 : 0;
+            const shuffleStyle = isShuffling ? { transform: `translate(${randomX}px, ${randomY}px) rotate(${randomRotate}deg) scale(0.8)`, transition: 'transform 0.5s ease-in-out', zIndex: 100, opacity: 0.7 } : { transition: 'transform 0.5s ease-out' };
+
+            return (
+              <div key={i} onClick={() => !isShuffling && toggleCard(i)} className="aspect-[5/4] perspective-1000 cursor-pointer group relative" style={{ perspective: '1000px', ...shuffleStyle }}>
+                <div className={`relative w-full h-full transition-all duration-500 transform preserve-3d ${isRevealed && !isShuffling ? 'rotate-y-180' : ''}`} style={{ transformStyle: 'preserve-3d', transform: (isRevealed && !isShuffling) ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
+                   <div className="absolute inset-0 backface-hidden bg-[#f0e6d2] rounded-md shadow-lg border-b-2 border-r-2 border-[#d7ccc8] flex items-center justify-center">
+                      <div className="w-full h-full border border-dashed border-[#a1887f]/50 rounded-md m-0.5 flex flex-col items-center justify-center">
+                        <span className="text-sm font-bold text-[#8d6e63] opacity-40 mb-1">No.</span>
+                        <span className="text-4xl font-bold text-[#8d6e63] opacity-30">{student?.number || '-'}</span>
+                      </div>
+                   </div>
+                   <div className={`absolute inset-0 backface-hidden rotate-y-180 rounded-md shadow-xl border flex flex-col items-center justify-center p-1 ${student?.gender === 'M' ? 'bg-blue-100 border-blue-200' : 'bg-pink-100 border-pink-200'}`} style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden' }}>
+                      {student ? (
+                        <>
+                           <span className="text-xs text-gray-500 font-bold absolute top-1 left-2">{student.number}</span>
+                           <div className="text-xl md:text-3xl lg:text-4xl font-black text-gray-800 break-words leading-none text-center w-full">{student.name}</div>
+                        </>
+                      ) : <span className="text-gray-300 font-bold text-lg">空席</span>}
+                   </div>
+                </div>
+              </div>
+            );
+          })}
+       </div>
+    );
+
+    return (
+      <div className="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans">
+        <div className="absolute inset-0 pointer-events-none opacity-10 bg-repeat" style={{ backgroundImage: 'radial-gradient(circle, #ffffff 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
+        <div className="fixed bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 to-transparent opacity-0 hover:opacity-100 transition-opacity z-50 flex justify-center items-center gap-3 print:hidden">
+           <button onClick={() => setMode('teacher')} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-sm rounded backdrop-blur">設定へ</button>
+           <button onClick={() => setIsSoundEnabled(!isSoundEnabled)} className="p-1.5 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur ml-2">{isSoundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
+           <div className="w-px h-8 bg-white/20 mx-1"></div>
+           <button onClick={shuffleSeatsWithAnimation} disabled={isShuffling} className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-500 text-white rounded shadow font-bold flex items-center gap-1 transition-all active:scale-95"><Shuffle size={16} /> 再シャッフル</button>
+           <button onClick={() => setRevealState({})} disabled={isShuffling} className="px-3 py-1.5 bg-red-500/80 hover:bg-red-600 disabled:bg-gray-500 text-white text-sm rounded shadow transition-all active:scale-95">伏せる</button>
+           <button onClick={drumRollReveal} disabled={isShuffling} className="px-4 py-1.5 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-500 text-black font-bold text-sm rounded shadow flex items-center gap-1 transition-all active:scale-95">公開</button>
+           <button onClick={revealAll} disabled={isShuffling} className="px-5 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 text-white font-bold rounded shadow transition-all active:scale-95">一斉公開</button>
+        </div>
+        <div className="flex-1 w-full p-2 md:p-4 flex flex-col items-center justify-start overflow-y-auto no-scrollbar">
+           {blackboardPosition === 'top' ? <>{blackboard}{grid}</> : <>{grid}<div className="mt-1"></div>{blackboard}</>}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <style>{`
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .preserve-3d { transform-style: preserve-3d; }
+        .backface-hidden { backface-visibility: hidden; }
+        .rotate-y-180 { transform: rotateY(180deg); }
+        .perspective-1000 { perspective: 1000px; }
+        @media print {
+          @page { size: landscape; margin: 5mm; }
+          .print\\:hidden { display: none !important; }
+          .print\\:block { display: block !important; }
+          .print\\:bg-white { background-color: white !important; }
+          .print\\:text-black { color: black !important; }
+          .print\\:shadow-none { box-shadow: none !important; }
+          .print\\:ring-0 { box-shadow: none !important; }
+          body { -webkit-print-color-adjust: exact; }
+        }
+      `}</style>
+      {mode === 'teacher' ? <TeacherDashboard /> : <StudentView />}
+    </>
+  );
+}
