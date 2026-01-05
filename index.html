@@ -2,28 +2,110 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>座席替えツール（軽量版）</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>席替えくん</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .backface-hidden { backface-visibility: hidden; }
+        .perspective-1000 { perspective: 1000px; }
+        .preserve-3d { transform-style: preserve-3d; }
+    </style>
 </head>
-<body class="bg-gray-100">
-    <div id="root">読み込みを開始します...</div>
+<body>
+    <div id="root">起動中...</div>
+
     <script type="text/babel">
-        const { useState } = React;
+        const { useState, useEffect, useRef, useCallback } = React;
+        const { Settings, Users, Shuffle, Monitor, Printer, RefreshCw, Grid, Lock, Volume2, VolumeX, User, UserX, XCircle, MousePointer2, PaintBucket, Link, AlertCircle, Download, FileText, Image: ImageIcon } = lucide;
+
+        // --- 音声フック ---
+        const useSound = () => {
+            const [audioCtx, setAudioCtx] = useState(null);
+            const [enabled, setEnabled] = useState(true);
+            useEffect(() => {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) setAudioCtx(new AudioContext());
+            }, []);
+            const playTone = useCallback((freq, type, duration, startTime = 0, vol = 0.1) => {
+                if (!audioCtx || !enabled) return;
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime + startTime);
+                gain.gain.setValueAtTime(0, audioCtx.currentTime + startTime);
+                gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + startTime + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime + startTime); osc.stop(audioCtx.currentTime + startTime + duration);
+            }, [audioCtx, enabled]);
+            return {
+                playFlip: () => playTone(1000 + Math.random() * 200, 'sine', 0.1, 0, 0.08),
+                playDrumroll: () => { if(audioCtx && enabled) for (let i = 0; i < 12; i++) playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15); },
+                playTada: () => { if(audioCtx && enabled) [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((f, i) => playTone(f, 'triangle', 1.8, i * 0.06, 0.15)); },
+                enabled, setEnabled
+            };
+        };
+
+        const INITIAL_STUDENTS = `1, 佐藤 健, 男\n2, 鈴木 愛, 女\n3, 高橋 翔, 男\n4, 田中 美咲, 女\n5, 伊藤 翼, 男\n6, 渡辺 結衣, 女\n7, 山本 蓮, 男\n8, 中村 陽菜, 女\n9, 小林 湊, 男\n10, 加藤 葵, 女`;
+
         function App() {
             const [mode, setMode] = useState('teacher');
+            const [students, setStudents] = useState([]);
+            const [rows, setRows] = useState(8);
+            const [cols, setCols] = useState(6);
+            const [seats, setSeats] = useState([]);
+            const [revealState, setRevealState] = useState({});
+            const [isShuffling, setIsShuffling] = useState(false);
+            const { playFlip, playDrumroll, playTada, enabled: isSoundEnabled, setEnabled: setIsSoundEnabled } = useSound();
+
+            useEffect(() => { parse(INITIAL_STUDENTS); }, []);
+            useEffect(() => { setSeats(new Array(rows * cols).fill(null).map((_, i) => students[i]?.id ?? null)); }, [rows, cols, students]);
+
+            const parse = (text) => {
+                const list = text.trim().split('\n').map((line, i) => {
+                    const p = line.split(/[,\t]/).map(s => s.trim());
+                    return { id: `s-${i}`, number: p[0]||i+1, name: p[1]||`生徒${i+1}`, gender: (p[2] && p[2].includes('女')) ? 'F' : 'M' };
+                });
+                setStudents(list);
+            };
+
+            const shuffle = () => {
+                setIsShuffling(true); playDrumroll();
+                setTimeout(() => {
+                    setSeats(prev => [...prev].sort(() => Math.random() - 0.5));
+                    setRevealState({}); setIsShuffling(false); playTada();
+                }, 1500);
+            };
+
             return (
-                <div class="p-10 text-center">
-                    <h1 class="text-2xl font-bold mb-5">座席替えツールが起動しました！</h1>
-                    <p class="mb-5">このメッセージが見えていれば、システムは正常です。</p>
-                    <button onClick={() => alert('動作確認OK')} class="bg-blue-500 text-white px-4 py-2 rounded">ボタンを押して確認</button>
-                </div>
-            );
-        }
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+                <div className="min-h-screen bg-gray-100 font-sans">
+                    <header className="bg-white p-4 shadow-sm flex justify-between items-center">
+                        <h1 className="font-bold text-lg flex items-center gap-2 text-gray-700">
+                            <Settings size={20}/>座席替えツール
+                        </h1>
+                        <button onClick={() => setMode(mode==='teacher'?'student':'teacher')} className="bg-teal-600 text-white px-4 py-2 rounded-lg font-bold">
+                            {mode==='teacher'?'生徒画面へ':'設定へ戻る'}
+                        </button>
+                    </header>
+
+                    <main className="p-6 flex flex-col items-center">
+                        <div className="w-full max-w-4xl bg-[#1a472a] h-12 rounded border-b-8 border-[#5d4037] mb-10 flex items-center justify-center text-white/20 tracking-[1em] font-bold shadow-lg">BLACKBOARD</div>
+                        
+                        <div className="grid gap-3 w-full max-w-6xl" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+                            {seats.map((sid, i) => {
+                                const s = students.find(x => x.id === sid);
+                                const rev = revealState[i] || mode === 'teacher';
+                                return (
+                                    <div key={i} onClick={() => setRevealState(p=>({...p, [i]:!p[i]}))} className="aspect-[4/3] perspective-1000 cursor-pointer">
+                                        <div className={`w-full h-full transition-all duration-500 preserve-3d relative rounded-lg shadow-md ${rev?'':'bg-[#f0e6d2]'}`} style={{ transform: rev ? 'rotateY(180deg)' : 'rotateY(0deg)', transformStyle: 'preserve-3d' }}>
+                                            <div className="absolute inset-0 flex items-center justify-center backface-hidden border border-dashed border-brown-200">
+                                                <span className="text-3xl font-bold text-[#8d6e63] opacity-20">{s?.number}</span>
+                                            </div>
+                                            <div className={`absolute inset-0 flex flex-col items-center justify-center backface-hidden rounded-lg ${s?.gender==='M'?'bg-blue-100':'bg-pink-100'}`} style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden' }}>
+                                                <span className="text-[10px] text-gray-500">{s?.number}</span>
+                                                <span className="text-lg font
