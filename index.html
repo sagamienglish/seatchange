@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>高校席替えアプリ</title>
+    <title>席替えくん</title>
     
     <!-- Tailwind CSS (デザイン用) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -340,7 +340,7 @@
         window.toggleRoster = () => { state.isRosterOpen = !state.isRosterOpen; render(); };
         window.updateImportUrl = (val) => { state.importUrl = val; render(); };
         window.updateImportText = (val) => { state.importText = val; }; // テキストエリアは再描画しない
-        window.runImport = () => { parseStudents(state.importText); state.isRosterOpen = false; render(); };
+        window.runImport = () => { parseStudents(state.importText); state.isRosterOpen = false; initSeats(); };
         window.runUrlImport = () => handleUrlImport();
         window.updateRows = (val) => { state.rows = parseInt(val) || 1; initSeats(); };
         window.updateCols = (val) => { state.cols = parseInt(val) || 1; initSeats(); };
@@ -462,14 +462,26 @@
                         backgroundColor: '#ffffff',
                         logging: false,
                         useCORS: true,
+                        // 全体を確実にキャプチャするための設定
+                        windowWidth: document.documentElement.scrollWidth + 1000,
+                        windowHeight: document.documentElement.scrollHeight + 1000,
                         onclone: (clonedDoc) => {
                             const el = clonedDoc.getElementById('capture-container');
                             if (el) {
                                 // 保存用スタイル適用
                                 el.style.width = '1400px';
                                 el.style.height = 'auto';
+                                el.style.minHeight = '1000px';
                                 el.style.padding = '40px';
                                 el.style.overflow = 'visible';
+                                el.style.position = 'static';
+                                
+                                // 親要素のスクロール制限解除
+                                const main = clonedDoc.querySelector('main');
+                                if (main) {
+                                    main.style.overflow = 'visible';
+                                    main.style.height = 'auto';
+                                }
                                 
                                 const grid = el.querySelector('.seat-grid');
                                 if (grid) {
@@ -495,6 +507,8 @@
                                         nameDiv.style.lineHeight = '1.2';
                                         nameDiv.style.whiteSpace = 'normal';
                                         nameDiv.style.overflow = 'visible';
+                                        // テキスト省略を解除
+                                        nameDiv.classList.remove('line-clamp-2');
                                     }
                                 });
                             }
@@ -620,7 +634,7 @@
             </aside>`;
 
             // メインエリア
-            const blackboard = `<div class="w-full max-w-6xl flex flex-col items-center flex-shrink-0 print:hidden mb-1"><div class="w-full h-4 md:h-6 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-1 flex items-center justify-center overflow-hidden rounded-sm"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div></div>`;
+            const blackboard = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
             
             let gridCells = '';
             displayIndices.forEach(i => {
@@ -669,7 +683,7 @@
                              style="grid-template-columns: repeat(${state.cols}, minmax(0, 1fr)); grid-template-rows: repeat(${state.rows}, minmax(0, 1fr));">
                             ${gridCells}
                         </div>
-                        ${state.blackboardPosition === 'bottom' ? blackboard.replace('mb-1', 'mt-1') : ''}
+                        ${state.blackboardPosition === 'bottom' ? blackboard.replace('mb-2', 'mt-2') : ''}
                     </div>
                 </main>
             `;
@@ -690,7 +704,7 @@
                 <button onclick="revealAll()" ${state.isShuffling ? 'disabled' : ''} class="px-4 py-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 text-white font-bold rounded shadow transition-all active:scale-95 text-xs">一斉</button>
             </div>`;
 
-            const blackboard = `<div class="w-full max-w-6xl flex flex-col items-center flex-shrink-0 print:hidden mb-1"><div class="w-full h-4 md:h-6 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-1 flex items-center justify-center overflow-hidden rounded-sm"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div></div>`;
+            const blackboard = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
 
             let gridCells = '';
             displayIndices.forEach(originalIndex => {
@@ -748,12 +762,12 @@
                 <div class="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans">
                     <div class="absolute inset-0 pointer-events-none opacity-10 bg-repeat" style="background-image: radial-gradient(circle, #ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
                     ${controls}
-                    <div class="flex-1 w-full p-1 md:p-2 flex flex-col items-center justify-center overflow-hidden z-10">
+                    <div class="flex-1 w-full p-1 md:p-2 flex flex-col items-center justify-center overflow-hidden z-10 pb-32">
                         ${state.blackboardPosition === 'top' ? blackboard : ''}
                         <div class="grid gap-1 md:gap-2 w-full h-full flex-1" style="grid-template-columns: repeat(${state.cols}, minmax(0, 1fr)); grid-template-rows: repeat(${state.rows}, minmax(0, 1fr));">
                             ${gridCells}
                         </div>
-                        ${state.blackboardPosition === 'bottom' ? blackboard.replace('mb-1', 'mt-1') : ''}
+                        ${state.blackboardPosition === 'bottom' ? blackboard.replace('mb-2', 'mt-2') : ''}
                     </div>
                 </div>
             `;
