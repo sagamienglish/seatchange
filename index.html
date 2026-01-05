@@ -261,6 +261,7 @@
         window.updateImportUrl = (v) => { state.importUrl = v; };
         window.updateImportText = (v) => { state.importText = v; };
         window.runImport = () => { parseStudents(state.importText); initSeats(); };
+        window.clearRosterText = () => { state.importText = ''; render(); };
         window.runUrlImport = () => handleUrlImport();
         window.updateRows = (v) => { state.rows = Math.max(1, parseInt(v) || 1); initSeats(); };
         window.updateCols = (val) => { state.cols = Math.max(1, parseInt(val) || 1); initSeats(); };
@@ -431,7 +432,10 @@
                                     </div>
                                     ${state.importError ? `<p class="text-[8px] text-red-500">${state.importError}</p>` : ''}
                                     <textarea oninput="updateImportText(this.value)" class="w-full h-32 p-1 border rounded text-[10px] font-mono no-scrollbar">${state.importText}</textarea>
-                                    <button onclick="runImport()" class="w-full bg-gray-100 py-1 rounded font-bold text-[10px]">更新</button>
+                                    <div class="flex gap-1">
+                                        <button onclick="runImport()" class="flex-1 bg-gray-100 py-1 rounded font-bold text-[10px]">更新</button>
+                                        <button onclick="clearRosterText()" class="flex-1 bg-red-50 text-red-600 py-1 rounded font-bold text-[10px] border border-red-100">クリア</button>
+                                    </div>
                                 </div>` : ''}
                         </section>
                         <div class="text-[11px] space-y-2 mt-4">
@@ -444,7 +448,8 @@
 
             let gridCells = '';
             displayIndices.forEach(i => {
-                const student = getStudent(state.seats[i]);
+                const sId = state.seats[i];
+                const student = getStudent(sId);
                 const isLocked = state.lockedSeats[i];
                 const isSwapping = state.activeTool === 'SWAP' && state.swapSourceIndex === i;
                 const attr = state.seatAttributes[i];
@@ -471,7 +476,7 @@
                 ${header}
                 <div class="flex flex-1 overflow-hidden">
                     ${sidebar}
-                    <main class="flex-1 overflow-auto flex flex-col items-center p-4 bg-gray-100 no-scrollbar pb-[100px]">
+                    <main class="flex-1 overflow-auto flex flex-col items-center p-4 bg-gray-100 no-scrollbar pb-[100px] pt-4">
                         <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-2 rounded-xl">
                             ${state.blackboardPosition === 'top' ? renderBlackboard('top') : ''}
                             ${seatGridHtml}
@@ -529,13 +534,21 @@
                 </div>`;
             });
 
-            const gridHtml = `<div class="seat-grid grid gap-2 p-4 justify-center content-center" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${gridCells}</div>`;
+            // グリッドをflexコンテナでラップしてスクロールを安定させる
+            const gridHtml = `
+                <div class="flex flex-col items-center justify-center min-h-full py-10 w-full">
+                    ${state.blackboardPosition === 'top' ? renderBlackboard('top') : ''}
+                    <div class="seat-grid grid gap-2 p-4 justify-center content-center flex-shrink-0" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">
+                        ${gridCells}
+                    </div>
+                    ${state.blackboardPosition === 'bottom' ? renderBlackboard('bottom') : ''}
+                </div>`;
 
             container.innerHTML = `
                 <div class="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans p-4">
                     <div class="absolute inset-0 opacity-5" style="background-image: radial-gradient(circle, #ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
-                    <div class="flex-1 w-full flex flex-col items-center justify-center z-10 overflow-auto no-scrollbar pb-[120px]">
-                        ${state.blackboardPosition === 'top' ? renderBlackboard('top') + gridHtml : gridHtml + renderBlackboard('bottom')}
+                    <div class="flex-1 w-full flex flex-col items-center z-10 overflow-auto no-scrollbar pb-[120px]">
+                        ${gridHtml}
                     </div>
                     ${controls}
                 </div>`;
