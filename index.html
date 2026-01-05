@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>席替えアプリ</title>
+    <title>席替えくん</title>
     
     <!-- Tailwind CSS (デザイン用) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -133,7 +133,8 @@
             showSaveMenu: false,
             importError: '',
             isRosterOpen: true, // デフォルトで開く
-            isSoundEnabled: true
+            isSoundEnabled: true,
+            isStudentControlsVisible: true // 生徒モードのコントロール表示状態
         };
 
         // --- Web Audio API (音生成) ---
@@ -365,6 +366,11 @@
             render();
         };
 
+        window.toggleControls = (visible) => {
+            state.isStudentControlsVisible = visible;
+            render();
+        }
+
         window.handleSeatClick = (index) => {
             if (state.activeTool === 'CURSOR') {
                 openSeatModal(index);
@@ -489,18 +495,24 @@
 
             try {
                 if (window.html2canvas) {
+                    // 自動計算: 幅 = 列数 * 180 + 余白, 高さ = 行数 * 140 + 余白
+                    const dynamicWidth = Math.max(1400, state.cols * 200 + 100);
+                    const dynamicHeight = Math.max(1000, state.rows * 160 + 200);
+
                     const canvas = await window.html2canvas(captureElement, {
                         scale: 3,
                         backgroundColor: '#ffffff',
                         logging: false,
                         useCORS: true,
-                        windowWidth: 1600, 
+                        windowWidth: dynamicWidth + 200, 
+                        windowHeight: dynamicHeight + 200,
                         onclone: (clonedDoc) => {
                             const el = clonedDoc.getElementById('capture-container');
                             if (el) {
-                                el.style.width = '1400px';
-                                el.style.height = 'auto';
-                                el.style.minHeight = '1000px';
+                                // 保存用スタイル適用
+                                el.style.width = `${dynamicWidth}px`;
+                                el.style.height = 'auto'; // 高さは内容に合わせて
+                                el.style.minHeight = `${dynamicHeight}px`;
                                 el.style.padding = '40px';
                                 el.style.overflow = 'visible';
                                 el.style.position = 'static';
@@ -515,24 +527,25 @@
                                 if (grid) {
                                     grid.style.height = 'auto';
                                     grid.style.display = 'grid';
-                                    grid.style.gap = '16px';
+                                    grid.style.gap = '20px'; // 隙間を広めに
                                     grid.style.gridTemplateColumns = `repeat(${state.cols}, 1fr)`;
-                                    grid.style.gridTemplateRows = `repeat(${state.rows}, minmax(120px, auto))`;
+                                    // 行の高さも確保
+                                    grid.style.gridTemplateRows = `repeat(${state.rows}, minmax(140px, auto))`;
                                 }
                                 
                                 const cells = el.querySelectorAll('.seat-cell');
                                 cells.forEach(cell => {
                                     cell.style.height = 'auto';
-                                    cell.style.minHeight = '120px';
-                                    cell.style.aspectRatio = 'auto';
+                                    cell.style.minHeight = '140px'; // セルの高さ確保
+                                    cell.style.aspectRatio = 'auto'; // アスペクト比解除
                                     cell.style.display = 'flex';
                                     cell.style.flexDirection = 'column';
                                     cell.style.justifyContent = 'center';
                                     
                                     const nameDiv = cell.querySelector('.student-name');
                                     if (nameDiv) {
-                                        nameDiv.style.fontSize = '24px';
-                                        nameDiv.style.lineHeight = '1.2';
+                                        nameDiv.style.fontSize = '28px'; // フォント大きく
+                                        nameDiv.style.lineHeight = '1.3';
                                         nameDiv.style.whiteSpace = 'normal';
                                         nameDiv.style.overflow = 'visible';
                                         nameDiv.classList.remove('line-clamp-2');
@@ -671,7 +684,7 @@
                 <button onclick="toggleBlackboard()" class="w-full py-1 bg-white border rounded hover:bg-gray-50 flex items-center justify-center gap-1 text-gray-700 text-xs"><i data-lucide="arrow-up-down" class="w-3 h-3"></i> 黒板: ${state.blackboardPosition === 'top' ? '上' : '下'}</button>
             </aside>`;
 
-            // メインエリア (スクロール可 + 座席のアスペクト比変更)
+            // メインエリア (スクロール可 + 座席サイズ固定)
             const blackboard = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
             
             let gridCells = '';
@@ -698,11 +711,9 @@
 
                 if (!isSwapping) {
                     if (student) {
-                        // 生徒がいる場合は生徒の色を優先（席替え実行後の表示を統一）
                         bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
-                        if (isLocked) { ringColor = 'ring-2 ring-red-500 z-10'; } // ロック状態は枠線で表示
+                        // if (isLocked) { ringColor = 'ring-2 ring-red-500 z-10'; } // ロック枠線を削除
                     } else {
-                        // 生徒がいない場合（設定中）
                         if (isLocked) { bgColor = 'bg-white'; ringColor = 'ring-1 ring-red-400'; }
                         else if (attr === 'EMPTY') { bgColor = 'bg-gray-200'; }
                         else if (attr === 'M') { bgColor = 'bg-blue-50 border-blue-300 border border-dashed'; }
@@ -721,16 +732,17 @@
                 }
 
                 let icons = '';
-                // ロックアイコンなどは枠線で表現するので、ここでは最小限に
-                if (isLocked) icons += `<i data-lucide="lock" class="w-2 h-2 text-red-500"></i>`;
-                if (!student) { // 生徒がいないときだけ属性を表示（生徒がいたら色でわかるため）
+                // 生徒がいない時だけアイコンを表示
+                if (!student) {
+                    if (isLocked) icons += `<i data-lucide="lock" class="w-2 h-2 text-red-500"></i>`;
                     if (attr === 'M') icons += `<span class="text-[8px] font-bold text-blue-500">♂</span>`;
                     if (attr === 'F') icons += `<span class="text-[8px] font-bold text-pink-500">♀</span>`;
                 }
 
-                // aspect-[3/2] で横長（縦幅縮小）に
+                // 固定サイズ（min-width/height指定でスクロールさせる）
+                // aspect-auto にして min-height/width を指定
                 gridCells += `
-                    <div onclick="handleSeatClick(${i})" class="seat-cell aspect-[3/2] rounded border shadow-sm flex flex-col items-center justify-center cursor-pointer relative group border-gray-300 hover:border-gray-500 ${bgColor} ${ringColor} print:border-gray-800 print:shadow-none print:ring-0 overflow-hidden" style="${style}">
+                    <div onclick="handleSeatClick(${i})" class="seat-cell rounded border shadow-sm flex flex-col items-center justify-center cursor-pointer relative group border-gray-300 hover:border-gray-500 ${bgColor} ${ringColor} print:border-gray-800 print:shadow-none print:ring-0 overflow-hidden" style="${style}">
                         <div class="absolute top-0.5 left-0.5 flex gap-0.5 z-10">${icons}</div>
                         ${content}
                     </div>
@@ -740,10 +752,10 @@
             return `
                 ${sidebar}
                 <main class="flex-1 bg-gray-100 p-2 overflow-y-auto flex flex-col items-center justify-start min-h-0 pb-[100px]">
-                    <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-full h-auto min-h-full">
+                    <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-auto h-auto min-h-full">
                         ${state.blackboardPosition === 'top' ? blackboard : ''}
                         <div class="seat-grid grid gap-1 p-1 bg-white rounded-lg shadow-inner w-full h-full" 
-                             style="grid-template-columns: repeat(${state.cols}, minmax(0, 1fr));">
+                             style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 90px);">
                             ${gridCells}
                         </div>
                         ${state.blackboardPosition === 'bottom' ? blackboard.replace('mb-2', 'mt-2') : ''}
@@ -756,8 +768,11 @@
             const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
             if (state.blackboardPosition === 'bottom') displayIndices.reverse();
 
+            const controlsVisible = state.isStudentControlsVisible ? '' : 'hidden';
+            const showBtnVisible = state.isStudentControlsVisible ? 'hidden' : '';
+
             const controls = `
-            <div class="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/90 to-transparent opacity-0 hover:opacity-100 transition-opacity z-50 flex justify-center items-center gap-4 print:hidden h-24">
+            <div class="${controlsVisible} fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/90 to-transparent opacity-100 flex justify-center items-center gap-4 print:hidden h-24 z-50">
                 <button onclick="setMode('teacher')" class="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-base rounded backdrop-blur font-bold">設定</button>
                 <button onclick="toggleBlackboard()" class="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-base rounded backdrop-blur font-bold"><i data-lucide="arrow-up-down" class="w-5 h-5"></i></button>
                 <button onclick="toggleSound()" class="p-3 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur"><i data-lucide="${state.isSoundEnabled ? 'volume-2' : 'volume-x'}" class="w-5 h-5"></i></button>
@@ -765,7 +780,10 @@
                 <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-500 text-white rounded shadow-lg font-bold flex items-center gap-2 transition-all active:scale-95 text-base"><i data-lucide="shuffle" class="w-5 h-5"></i> 席替え</button>
                 <button onclick="drumRollReveal()" ${state.isShuffling ? 'disabled' : ''} class="px-6 py-3 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-500 text-black font-bold text-base rounded shadow-lg flex items-center gap-2 transition-all active:scale-95">公開</button>
                 <button onclick="revealAll()" ${state.isShuffling ? 'disabled' : ''} class="px-8 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 text-white font-bold rounded shadow-lg transition-all active:scale-95 text-base">一斉</button>
-            </div>`;
+                <button onclick="toggleControls(false)" class="ml-2 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <button onclick="toggleControls(true)" class="${showBtnVisible} fixed bottom-4 right-4 p-3 bg-gray-800/50 text-white rounded-full shadow-lg z-40 hover:bg-gray-800/80"><i data-lucide="chevron-up" class="w-6 h-6"></i></button>
+            `;
 
             const blackboard = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
 
