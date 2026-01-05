@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>高校席替えアプリ</title>
+    <title>席替えくん</title>
     
     <!-- Tailwind CSS (デザイン用) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -126,12 +126,13 @@
             revealState: {},
             blackboardPosition: 'top',
             isShuffling: false,
-            activeTool: 'CURSOR',
+            activeTool: 'CURSOR', // 'CURSOR', 'EMPTY', 'M', 'F', 'SWAP'
+            swapSourceIndex: null, // 入れ替え元のインデックス
             editingSeatIndex: null,
             searchQuery: '',
             showSaveMenu: false,
             importError: '',
-            isRosterOpen: false,
+            isRosterOpen: true, // デフォルトで開く
             isSoundEnabled: true
         };
 
@@ -266,7 +267,7 @@
                 state.importText = text;
                 parseStudents(text);
                 state.importUrl = '';
-                state.isRosterOpen = false;
+                // 名簿更新後は閉じない（確認のため）
                 initSeats(); 
             } catch (e) {
                 console.error(e);
@@ -333,31 +334,41 @@
         window.setMode = (mode) => { state.mode = mode; render(); };
         window.toggleSound = () => { state.isSoundEnabled = !state.isSoundEnabled; render(); };
         window.toggleSaveMenu = () => { state.showSaveMenu = !state.showSaveMenu; render(); };
-        window.setActiveTool = (tool) => { state.activeTool = tool; render(); };
+        window.setActiveTool = (tool) => { 
+            state.activeTool = tool; 
+            state.swapSourceIndex = null; // ツール変更時に選択解除
+            render(); 
+        };
         window.toggleRoster = () => { state.isRosterOpen = !state.isRosterOpen; render(); };
         window.updateImportUrl = (val) => { state.importUrl = val; render(); };
         window.updateImportText = (val) => { state.importText = val; }; 
-        window.runImport = () => { parseStudents(state.importText); state.isRosterOpen = false; initSeats(); };
+        window.runImport = () => { parseStudents(state.importText); initSeats(); };
         window.runUrlImport = () => handleUrlImport();
         
-        // 数値変更用のラッパー
         window.updateRows = (val) => { 
             let v = parseInt(val);
             if (isNaN(v) || v < 1) v = 1;
-            if (v > 20) v = 20; // 安全策
+            if (v > 20) v = 20; 
             state.rows = v; 
             initSeats(); 
         };
         window.updateCols = (val) => { 
             let v = parseInt(val);
             if (isNaN(v) || v < 1) v = 1;
-            if (v > 12) v = 12; // 安全策
+            if (v > 12) v = 12; 
             state.cols = v; 
             initSeats(); 
         };
         
         window.toggleBlackboard = () => { state.blackboardPosition = state.blackboardPosition === 'top' ? 'bottom' : 'top'; render(); };
         
+        window.clearSeats = () => {
+            // ロックされていない席の生徒IDを削除
+            state.seats = state.seats.map((studentId, i) => state.lockedSeats[i] ? studentId : null);
+            state.revealState = {};
+            render();
+        };
+
         window.handleSeatClick = (index) => {
             if (state.activeTool === 'CURSOR') {
                 openSeatModal(index);
@@ -377,6 +388,19 @@
             } else if (state.activeTool === 'F') {
                 state.seatAttributes[index] = state.seatAttributes[index] === 'F' ? null : 'F';
                 state.lockedSeats[index] = false;
+                render();
+            } else if (state.activeTool === 'SWAP') {
+                if (state.swapSourceIndex === null) {
+                    state.swapSourceIndex = index;
+                } else {
+                    // 入れ替え処理
+                    const sourceIdx = state.swapSourceIndex;
+                    const targetIdx = index;
+                    const temp = state.seats[sourceIdx];
+                    state.seats[sourceIdx] = state.seats[targetIdx];
+                    state.seats[targetIdx] = temp;
+                    state.swapSourceIndex = null;
+                }
                 render();
             }
         };
@@ -474,11 +498,10 @@
                         backgroundColor: '#ffffff',
                         logging: false,
                         useCORS: true,
-                        windowWidth: 1600, // 確実に大きく描画させる
+                        windowWidth: 1600, 
                         onclone: (clonedDoc) => {
                             const el = clonedDoc.getElementById('capture-container');
                             if (el) {
-                                // 保存用スタイル適用
                                 el.style.width = '1400px';
                                 el.style.height = 'auto';
                                 el.style.minHeight = '1000px';
@@ -589,6 +612,7 @@
 
                 <div class="hidden md:flex flex-col gap-2">
                     <button onclick="shuffleSeatsWithAnimation()" class="flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="shuffle" class="w-3.5 h-3.5"></i> 席替え実行</button>
+                    <button onclick="clearSeats()" class="flex items-center justify-center gap-1 bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1.5 rounded font-bold shadow-sm text-xs"><i data-lucide="eraser" class="w-3.5 h-3.5"></i> クリア</button>
                     <div class="flex gap-1">
                         <button onclick="window.print()" class="flex-1 flex items-center justify-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1.5 rounded font-bold text-xs"><i data-lucide="printer" class="w-3 h-3"></i> 印刷</button>
                         <div class="relative flex-1">
@@ -601,11 +625,14 @@
 
                 <section class="bg-indigo-50 p-2 rounded border border-indigo-100 text-xs">
                     <h2 class="font-bold text-indigo-800 uppercase mb-1 flex items-center"><i data-lucide="paint-bucket" class="mr-1 w-3 h-3"></i> 一括設定</h2>
-                    <div class="grid grid-cols-4 md:grid-cols-2 gap-1">
+                    <div class="grid grid-cols-4 gap-1">
                         ${renderToolButton('CURSOR', 'mouse-pointer-2', '選択', 'bg-white shadow text-indigo-700 font-bold')}
                         ${renderToolButton('EMPTY', 'user-x', '空席', 'bg-gray-600 text-white shadow font-bold')}
                         ${renderToolButton('M', null, '男子', 'bg-blue-500 text-white shadow font-bold', '♂')}
                         ${renderToolButton('F', null, '女子', 'bg-pink-500 text-white shadow font-bold', '♀')}
+                    </div>
+                    <div class="mt-1">
+                        ${renderToolButton('SWAP', 'arrow-left-right', '入れ替え', 'bg-orange-500 text-white shadow font-bold')}
                     </div>
                 </section>
 
@@ -624,7 +651,7 @@
                                 ${state.importError ? `<p class="text-red-500 text-[10px]">${state.importError}</p>` : ''}
                             </div>
                             <textarea class="w-full h-24 p-1 border rounded font-mono text-[10px]" oninput="updateImportText(this.value)" placeholder="1, 佐藤, 男">${state.importText}</textarea>
-                            <button onclick="runImport()" class="w-full py-1 bg-gray-200 hover:bg-gray-300 rounded flex items-center justify-center gap-1 font-bold"><i data-lucide="refresh-cw" class="w-2.5 h-2.5"></i> 更新して閉じる</button>
+                            <button onclick="runImport()" class="w-full py-1 bg-gray-200 hover:bg-gray-300 rounded flex items-center justify-center gap-1 font-bold"><i data-lucide="refresh-cw" class="w-2.5 h-2.5"></i> 更新</button>
                         </div>
                     ` : ''}
                 </section>
@@ -648,7 +675,7 @@
                 <button onclick="toggleBlackboard()" class="w-full py-1 bg-white border rounded hover:bg-gray-50 flex items-center justify-center gap-1 text-gray-700 text-xs"><i data-lucide="arrow-up-down" class="w-3 h-3"></i> 黒板: ${state.blackboardPosition === 'top' ? '上' : '下'}</button>
             </aside>`;
 
-            // メインエリア (スクロール可に修正)
+            // メインエリア (スクロール可に修正 + 座席のアスペクト比変更)
             const blackboard = `<div class="w-[70%] h-12 md:h-20 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative mb-2 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm print:hidden"><div class="absolute bottom-1 right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
             
             let gridCells = '';
@@ -657,19 +684,23 @@
                 const student = studentId ? getStudent(studentId) : null;
                 const isLocked = state.lockedSeats[i];
                 const attr = state.seatAttributes[i];
+                const isSwapping = state.activeTool === 'SWAP' && state.swapSourceIndex === i;
                 
                 let bgColor = 'bg-gray-50';
-                let ringColor = '';
-                if (isLocked) { bgColor = 'bg-white'; ringColor = 'ring-1 ring-red-400'; }
-                else if (attr === 'EMPTY') { bgColor = 'bg-gray-200'; }
-                else if (attr === 'M') { bgColor = 'bg-blue-50 border-blue-300 border border-dashed'; }
-                else if (attr === 'F') { bgColor = 'bg-pink-50 border-pink-300 border border-dashed'; }
-                else if (student) { bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100'; }
+                let ringColor = isSwapping ? 'ring-4 ring-orange-400 z-10' : ''; // 入れ替え選択中は強調
+                
+                if (!isSwapping) {
+                    if (isLocked) { bgColor = 'bg-white'; ringColor = 'ring-1 ring-red-400'; }
+                    else if (attr === 'EMPTY') { bgColor = 'bg-gray-200'; }
+                    else if (attr === 'M') { bgColor = 'bg-blue-50 border-blue-300 border border-dashed'; }
+                    else if (attr === 'F') { bgColor = 'bg-pink-50 border-pink-300 border border-dashed'; }
+                    else if (student) { bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100'; }
+                }
 
                 let content = '';
                 if (student) {
                     content = `<div class="w-full text-center flex flex-col justify-center h-full p-0.5 relative">
-                        <span class="text-[8px] text-gray-500 font-bold leading-none mb-0.5 absolute top-0 left-1">${student.number}</span>
+                        <span class="text-[10px] md:text-xs text-gray-500 font-bold leading-none mb-0.5 absolute top-0 left-1">${student.number}</span>
                         <div class="student-name text-[10px] md:text-xs lg:text-sm font-bold text-gray-800 leading-tight w-full break-all line-clamp-2 flex items-center justify-center h-full pt-1">${student.name}</div>
                     </div>`;
                 } else {
@@ -681,8 +712,9 @@
                 if (attr === 'M') icons += `<span class="text-[8px] font-bold text-blue-500">♂</span>`;
                 if (attr === 'F') icons += `<span class="text-[8px] font-bold text-pink-500">♀</span>`;
 
+                // aspect-[3/2] で横長（縦幅縮小）に
                 gridCells += `
-                    <div onclick="handleSeatClick(${i})" class="seat-cell rounded border shadow-sm flex flex-col items-center justify-center cursor-pointer relative group border-gray-300 hover:border-gray-500 ${bgColor} ${ringColor} print:border-gray-800 print:shadow-none print:ring-0 overflow-hidden">
+                    <div onclick="handleSeatClick(${i})" class="seat-cell aspect-[3/2] rounded border shadow-sm flex flex-col items-center justify-center cursor-pointer relative group border-gray-300 hover:border-gray-500 ${bgColor} ${ringColor} print:border-gray-800 print:shadow-none print:ring-0 overflow-hidden">
                         <div class="absolute top-0.5 left-0.5 flex gap-0.5 z-10">${icons}</div>
                         ${content}
                     </div>
@@ -695,7 +727,7 @@
                     <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-1 rounded-xl print:p-0 print:bg-white w-full h-auto min-h-full">
                         ${state.blackboardPosition === 'top' ? blackboard : ''}
                         <div class="seat-grid grid gap-1 p-1 bg-white rounded-lg shadow-inner w-full h-full" 
-                             style="grid-template-columns: repeat(${state.cols}, minmax(0, 1fr)); grid-template-rows: repeat(${state.rows}, minmax(0, 1fr));">
+                             style="grid-template-columns: repeat(${state.cols}, minmax(0, 1fr));">
                             ${gridCells}
                         </div>
                         ${state.blackboardPosition === 'bottom' ? blackboard.replace('mb-2', 'mt-2') : ''}
@@ -711,10 +743,10 @@
             const controls = `
             <div class="fixed bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/90 to-transparent opacity-0 hover:opacity-100 transition-opacity z-50 flex justify-center items-center gap-2 print:hidden h-16">
                 <button onclick="setMode('teacher')" class="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-xs rounded backdrop-blur">設定</button>
+                <button onclick="toggleBlackboard()" class="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-xs rounded backdrop-blur"><i data-lucide="arrow-up-down" class="w-3 h-3"></i> 黒板</button>
                 <button onclick="toggleSound()" class="p-1 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur"><i data-lucide="${state.isSoundEnabled ? 'volume-2' : 'volume-x'}" class="w-3.5 h-3.5"></i></button>
                 <div class="w-px h-6 bg-white/20 mx-1"></div>
-                <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-500 text-white rounded shadow font-bold flex items-center gap-1 transition-all active:scale-95 text-xs"><i data-lucide="shuffle" class="w-3.5 h-3.5"></i> 再</button>
-                <button onclick="hideAll()" ${state.isShuffling ? 'disabled' : ''} class="px-2 py-1 bg-red-500/80 hover:bg-red-600 disabled:bg-gray-500 text-white text-xs rounded shadow transition-all active:scale-95">伏</button>
+                <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling ? 'disabled' : ''} class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-500 text-white rounded shadow font-bold flex items-center gap-1 transition-all active:scale-95 text-xs"><i data-lucide="shuffle" class="w-3.5 h-3.5"></i> 席替え</button>
                 <button onclick="drumRollReveal()" ${state.isShuffling ? 'disabled' : ''} class="px-3 py-1 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-500 text-black font-bold text-xs rounded shadow flex items-center gap-1 transition-all active:scale-95">公開</button>
                 <button onclick="revealAll()" ${state.isShuffling ? 'disabled' : ''} class="px-4 py-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 text-white font-bold rounded shadow transition-all active:scale-95 text-xs">一斉</button>
             </div>`;
@@ -790,7 +822,7 @@
 
         function renderToolButton(tool, icon, label, activeClass, textIcon = '') {
             const isActive = state.activeTool === tool;
-            const baseClass = "p-1 rounded flex flex-col md:flex-row items-center justify-center gap-1";
+            const baseClass = "p-1 rounded flex flex-col md:flex-row items-center justify-center gap-1 w-full";
             const colorClass = isActive ? activeClass : 'hover:bg-white/50 text-indigo-600';
             const iconHtml = icon ? `<i data-lucide="${icon}" class="w-3 h-3"></i>` : '';
             
