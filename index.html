@@ -2,210 +2,26 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>座席替えツール</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <title>座席替えツール（軽量版）</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        body { margin: 0; background-color: #f3f4f6; }
-        #root { min-height: 100vh; }
-        .backface-hidden { backface-visibility: hidden; }
-    </style>
 </head>
-<body>
-    <div id="root">読み込み中...（しばらくお待ちください）</div>
-
+<body class="bg-gray-100">
+    <div id="root">読み込みを開始します...</div>
     <script type="text/babel">
-        const { useState, useEffect, useRef, useCallback } = React;
-        
-        // アイコンの定義
-        const { 
-            Settings, Users, Shuffle, Monitor, Printer, RefreshCw, Grid, Lock, Unlock, 
-            ArrowUpDown, Volume2, VolumeX, User, UserX, CheckCircle, XCircle, 
-            MousePointer2, PaintBucket, Link, AlertCircle, Download, FileText, Image: ImageIcon 
-        } = lucide;
-
-        // --- 音声機能 ---
-        const useSound = () => {
-          const [audioCtx, setAudioCtx] = useState(null);
-          const [enabled, setEnabled] = useState(true);
-          useEffect(() => {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            if (AudioContext) setAudioCtx(new AudioContext());
-          }, []);
-          const playTone = useCallback((freq, type, duration, startTime = 0, vol = 0.1) => {
-            if (!audioCtx || !enabled) return;
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, audioCtx.currentTime + startTime);
-            gain.gain.setValueAtTime(0, audioCtx.currentTime + startTime);
-            gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + startTime + 0.01);
-            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.start(audioCtx.currentTime + startTime); osc.stop(audioCtx.currentTime + startTime + duration);
-          }, [audioCtx, enabled]);
-          return { 
-            playFlip: () => playTone(1000 + Math.random() * 200, 'sine', 0.1, 0, 0.08),
-            playDrumroll: () => { if(audioCtx && enabled) for (let i = 0; i < 12; i++) playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15); },
-            playTada: () => { if(audioCtx && enabled) [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((f, i) => playTone(f, 'triangle', 1.8, i * 0.06, 0.15)); },
-            enabled, setEnabled 
-          };
-        };
-
-        const INITIAL_TEXT = `1, 佐藤 健, 男\n2, 鈴木 愛, 女\n3, 高橋 翔, 男\n4, 田中 美咲, 女\n5, 伊藤 翼, 男\n6, 渡辺 結衣, 女\n7, 山本 蓮, 男\n8, 中村 陽菜, 女\n9, 小林 湊, 男\n10, 加藤 葵, 女\n11, 吉田 樹, 男\n12, 山田 凛, 女\n13, 佐々木 陸, 男\n14, 山口 澪, 女\n15, 松本 蒼, 男\n16, 井上 紬, 女\n17, 木村 大和, 男\n18, 林 杏奈, 女\n19, 斎藤 悠真, 男\n20, 清水 桜, 女\n21, 山崎 瑛太, 男\n22, 池田 楓, 女\n23, 橋本 朝陽, 男\n24, 阿部 菫, 女\n25, 宮本 琉生, 男\n26, 石川 陽菜, 女\n27, 中川 湊斗, 男\n28, 野口 結菜, 女\n29, 酒井 大翔, 男\n30, 村上 莉子, 女\n31, 小川 悠人, 男\n32, 長谷川 咲良, 女\n33, 岡田 陽向, 男\n34, 藤田 結衣, 女\n35, 後藤 陸, 男\n36, 近藤 陽菜, 女\n37, 石井 湊, 男\n38, 小島 葵, 女\n39, 遠藤 樹, 男\n40, 青木 凛, 女\n41, 藤井 陸, 男\n42, 西村 澪, 女\n43, 安藤 蒼, 男\n44, 辻 紬, 女\n45, 山下 大和, 男\n46, 岡本 杏奈, 女\n47, 森本 悠真, 男\n48, 今井 桜, 女`;
-
+        const { useState } = React;
         function App() {
-          const [mode, setMode] = useState('teacher');
-          const [students, setStudents] = useState([]);
-          const [rows, setRows] = useState(8);
-          const [cols, setCols] = useState(6);
-          const [seats, setSeats] = useState([]);
-          const [lockedSeats, setLockedSeats] = useState({});
-          const [seatAttributes, setSeatAttributes] = useState({});
-          const [importText, setImportText] = useState(INITIAL_TEXT);
-          const [revealState, setRevealState] = useState({});
-          const [blackboardPosition, setBlackboardPosition] = useState('top');
-          const [isShuffling, setIsShuffling] = useState(false);
-          const [activeTool, setActiveTool] = useState('CURSOR');
-          const [editingSeatIndex, setEditingSeatIndex] = useState(null);
-          const { playFlip, playDrumroll, playTada, enabled: isSoundEnabled, setEnabled: setIsSoundEnabled } = useSound();
-
-          useEffect(() => { parseStudents(INITIAL_TEXT); }, []);
-          useEffect(() => {
-            setSeats(prev => {
-              const newSeats = new Array(rows * cols).fill(null);
-              for (let i = 0; i < Math.min(prev.length, newSeats.length); i++) newSeats[i] = prev[i];
-              return newSeats;
-            });
-          }, [rows, cols]);
-
-          const parseStudents = (text) => {
-            const lines = text.trim().split('\n');
-            const parsed = lines.map((line, i) => {
-              const parts = line.split(/[,\t]/).map(p => p.trim());
-              return { id: `s-${i}`, number: parts[0] || i+1, name: parts[1] || `生徒${i+1}`, gender: (parts[2] && (parts[2].includes('女') || parts[2].toLowerCase().includes('f'))) ? 'F' : 'M' };
-            });
-            setStudents(parsed);
-          };
-
-          const shuffleLogic = () => {
-            let newSeats = [...seats];
-            const lockedIds = new Set();
-            seats.forEach((sid, i) => { if(lockedSeats[i] && sid) lockedIds.add(sid); else newSeats[i] = null; });
-            let pool = students.filter(s => !lockedIds.has(s.id));
-            let boys = pool.filter(s => s.gender === 'M').sort(() => Math.random() - 0.5);
-            let girls = pool.filter(s => s.gender === 'F').sort(() => Math.random() - 0.5);
-            seats.forEach((_, i) => {
-              if(!newSeats[i]) {
-                if(seatAttributes[i] === 'M' && boys.length > 0) newSeats[i] = boys.pop().id;
-                else if(seatAttributes[i] === 'F' && girls.length > 0) newSeats[i] = girls.pop().id;
-              }
-            });
-            let remain = [...boys, ...girls].sort(() => Math.random() - 0.5);
-            seats.forEach((_, i) => { if(!newSeats[i] && seatAttributes[i] !== 'EMPTY' && remain.length > 0) newSeats[i] = remain.pop().id; });
-            setSeats(newSeats); setRevealState({});
-          };
-
-          const handleShuffle = () => {
-            if (mode === 'student') { setIsShuffling(true); playDrumroll(); setTimeout(() => { shuffleLogic(); setIsShuffling(false); playTada(); }, 1500); }
-            else shuffleLogic();
-          };
-
-          const Blackboard = () => (
-            <div className="w-full bg-[#1a472a] h-10 border-y-4 border-[#5d4037] mb-4 flex items-center justify-center rounded shadow-lg text-white/50 text-xs tracking-widest">BLACKBOARD</div>
-          );
-
-          if (mode === 'teacher') {
+            const [mode, setMode] = useState('teacher');
             return (
-              <div className="flex flex-col h-screen overflow-hidden">
-                <header className="bg-white p-3 border-b flex justify-between shadow-sm">
-                  <h1 className="font-bold flex items-center gap-2"><Settings size={18}/>座席替え設定</h1>
-                  <div className="flex gap-2">
-                    <button onClick={handleShuffle} className="bg-indigo-600 text-white px-4 py-1 rounded font-bold">実行</button>
-                    <button onClick={() => setMode('student')} className="bg-teal-600 text-white px-4 py-1 rounded font-bold">生徒画面</button>
-                  </div>
-                </header>
-                <div className="flex flex-1 overflow-hidden">
-                  <aside className="w-64 p-4 border-r bg-gray-50 overflow-y-auto space-y-4">
-                    <div>
-                      <label className="text-xs font-bold text-gray-500">ツール選択</label>
-                      <div className="grid grid-cols-2 gap-1 mt-1">
-                        {['CURSOR', 'EMPTY', 'M', 'F'].map(t => (
-                          <button key={t} onClick={() => setActiveTool(t)} className={`p-2 text-xs border rounded ${activeTool === t ? 'bg-indigo-600 text-white' : 'bg-white'}`}>
-                            {t === 'CURSOR' ? '選択' : t === 'EMPTY' ? '空席' : t === 'M' ? '男子' : '女子'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-gray-500">名簿 (番号,名前,性別)</label>
-                      <textarea className="w-full h-40 text-[10px] p-2 border font-mono mt-1" value={importText} onChange={e => setImportText(e.target.value)} />
-                      <button onClick={() => parseStudents(importText)} className="w-full bg-gray-200 text-xs py-1 mt-1">更新</button>
-                    </div>
-                  </aside>
-                  <main className="flex-1 p-8 overflow-auto bg-gray-100 flex flex-col items-center">
-                    <div className="w-full max-w-4xl bg-white p-8 rounded shadow-lg">
-                      {blackboardPosition === 'top' && <Blackboard />}
-                      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-                        {seats.map((sid, i) => {
-                          const s = students.find(x => x.id === sid);
-                          const attr = seatAttributes[i];
-                          return (
-                            <div key={i} onClick={() => {
-                              if(activeTool === 'CURSOR') setEditingSeatIndex(i);
-                              else if(activeTool === 'EMPTY') setSeatAttributes(p => ({...p, [i]: p[i] === 'EMPTY' ? null : 'EMPTY'}));
-                              else setSeatAttributes(p => ({...p, [i]: p[i] === activeTool ? null : activeTool}));
-                            }} className={`aspect-[4/3] border rounded flex flex-col items-center justify-center cursor-pointer text-xs ${s ? (s.gender==='M'?'bg-blue-50':'bg-pink-50') : (attr==='EMPTY'?'bg-gray-200':'bg-white')}`}>
-                              {s ? <b>{s.name}</b> : <span className="text-gray-300">{attr==='EMPTY'?'空':i+1}</span>}
-                              {attr && attr!=='EMPTY' && <span className="text-[8px] text-gray-400">{attr}指定</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </main>
+                <div class="p-10 text-center">
+                    <h1 class="text-2xl font-bold mb-5">座席替えツールが起動しました！</h1>
+                    <p class="mb-5">このメッセージが見えていれば、システムは正常です。</p>
+                    <button onClick={() => alert('動作確認OK')} class="bg-blue-500 text-white px-4 py-2 rounded">ボタンを押して確認</button>
                 </div>
-              </div>
             );
-          }
-
-          return (
-            <div className="fixed inset-0 bg-[#2b3a42] p-4 flex flex-col items-center overflow-y-auto">
-              <div className="w-full max-w-5xl">
-                <Blackboard />
-                <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-                  {seats.map((sid, i) => {
-                    const s = students.find(x => x.id === sid);
-                    const revealed = revealState[i];
-                    if(!sid && seatAttributes[i] === 'EMPTY') return <div key={i} className="aspect-[4/3] border border-white/10 rounded" />;
-                    return (
-                      <div key={i} onClick={() => setRevealState(p => ({...p, [i]: !p[i]}))} className="aspect-[4/3] relative" style={{ perspective: '1000px' }}>
-                        <div className={`w-full h-full transition-all duration-500 rounded shadow-2xl ${revealed ? '' : 'bg-[#f0e6d2]'}`} style={{ transformStyle: 'preserve-3d', transform: revealed ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
-                          <div className="absolute inset-0 flex items-center justify-center backface-hidden"><span className="text-2xl font-bold text-[#8d6e63] opacity-20">{s?.number}</span></div>
-                          <div className={`absolute inset-0 flex flex-col items-center justify-center backface-hidden rounded ${s?.gender==='M'?'bg-blue-100':'bg-pink-100'}`} style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden' }}>
-                            <span className="text-[10px] mb-1">{s?.number}</span>
-                            <span className="text-xl font-bold">{s?.name}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="fixed bottom-6 flex gap-3 bg-black/60 p-4 rounded-full backdrop-blur-md">
-                <button onClick={() => setMode('teacher')} className="text-white text-xs px-2">設定</button>
-                <button onClick={handleShuffle} className="bg-yellow-500 px-6 py-2 rounded-full font-bold">シャッフル！</button>
-                <button onClick={() => { playTada(); const ns={}; seats.forEach((_,i)=>ns[i]=true); setRevealState(ns); }} className="bg-green-600 text-white px-6 py-2 rounded-full font-bold">一斉公開</button>
-              </div>
-            </div>
-          );
         }
-
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
