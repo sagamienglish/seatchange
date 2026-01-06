@@ -1,618 +1,290 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  Shuffle, Monitor, Printer, Lock, ArrowUpDown, Volume2, VolumeX, 
-  UserX, CheckCircle, XCircle, MousePointer2, PaintBucket, 
-  Link as LinkIcon, AlertCircle, Download, FileText, 
-  Image as ImageIcon, ChevronDown, ChevronRight, Edit3, Trash2, 
-  Save, FolderOpen, ChevronLeft, X, Eye, Users
-} from 'lucide-react';
-
-// --- 1. 初期データ定義 ---
-const INITIAL_STUDENTS_TEXT = `1, 赤木 美咲, 女
-2, 伊藤 結衣, 女
-3, 上田 陽菜, 女
-4, 江口 葵, 女
-5, 太田 凛, 女
-6, 加藤 紬, 女
-7, 木村 杏奈, 女
-8, 工藤 桜, 女
-9, 佐々木 楓, 女
-10, 佐藤 菫, 女
-11, 鈴木 莉子, 女
-12, 高橋 咲良, 女
-13, 田中 萌, 女
-14, 中島 くるみ, 女
-15, 西村 栞, 女
-16, 長谷川 奈々, 女
-17, 林 遥, 女
-18, 藤田 詩織, 女
-19, 村上 愛, 女
-20, 山口 花, 女
-21, 安藤 健, 男
-22, 池田 翔, 男
-23, 石井 翼, 男
-24, 市川 蓮, 男
-25, 遠藤 湊, 男
-26, 岡田 樹, 男
-27, 小川 陸, 男
-28, 金子 大和, 男
-29, 小林 悠真, 男
-30, 近藤 瑛太, 男
-31, 斉藤 朝陽, 男
-32, 酒井 琉生, 男
-33, 坂本 湊斗, 男
-34, 清水 大翔, 男
-35, 菅原 悠人, 男
-36, 武井 颯太, 男
-37, 竹内 拓海, 男
-38, 中村 悠人, 男
-39, 野口 翔太, 男
-40, 橋本 隼人, 男
-41, 長谷川 健太, 男
-42, 馬場 駿, 男
-43, 福田 亮太, 男
-44, 前田 雄大, 男
-45, 松本 太陽, 男
-46, 森 一真, 男
-47, 山崎 輝, 男
-48, 渡辺 拓己, 男`;
-
-export default function App() {
-  // --- 2. 状態管理 ---
-  const [mode, setMode] = useState('teacher'); 
-  const [students, setStudents] = useState([]);
-  const [rows, setRows] = useState(8);
-  const [cols, setCols] = useState(6);
-  const [seats, setSeats] = useState([]); 
-  const [referenceSeats, setReferenceSeats] = useState([]); 
-  const [lockedSeats, setLockedSeats] = useState({}); 
-  const [seatAttributes, setSeatAttributes] = useState({}); 
-  const [importText, setImportText] = useState(INITIAL_STUDENTS_TEXT);
-  const [importUrl, setImportUrl] = useState('');
-  const [revealState, setRevealState] = useState({});
-  const [blackboardPosition, setBlackboardPosition] = useState('top');
-  const [isShuffling, setIsShuffling] = useState(false);
-  const [activeTool, setActiveTool] = useState('CURSOR');
-  const [editingSeatIndex, setEditingSeatIndex] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSaveMenu, setShowSaveMenu] = useState(false);
-  const [importError, setImportError] = useState('');
-  const [isRosterOpen, setIsRosterOpen] = useState(false); 
-  const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [isStudentControlsVisible, setStudentControlsVisible] = useState(true);
-  const [avoidSameSeat, setAvoidSameSeat] = useState(false);
-  const [avoidSamePartner, setAvoidSamePartner] = useState(false);
-  const [isSoundEnabled, setIsSoundEnabled] = useState(true);
-  const [swapSourceIndex, setSwapSourceIndex] = useState(null);
-
-  const captureRef = useRef(null); 
-  const audioCtxRef = useRef(null);
-
-  // --- 3. ライブラリロード ---
-  useEffect(() => {
-    const scripts = [
-      "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
-      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
-    ];
-    scripts.forEach(src => {
-      if (!document.querySelector(`script[src="${src}"]`)) {
-        const s = document.createElement('script');
-        s.src = src; s.async = true; document.head.appendChild(s);
-      }
-    });
-  }, []);
-
-  // --- 4. ロジック ---
-
-  const parseStudents = useCallback((text) => {
-    if (!text) return;
-    const lines = text.trim().split('\n');
-    const parsed = lines.map((line, i) => {
-      const parts = line.split(/[,\t]/).map(p => p.trim()).filter(p => p);
-      let num = i + 1, name = `生徒${i+1}`, gender = 'M';
-      if (parts.length >= 3) {
-         if (!isNaN(parseInt(parts[0]))) { num = parseInt(parts[0]); name = parts[1]; gender = (parts[2].includes('女') || parts[2].toLowerCase().includes('f')) ? 'F' : 'M'; } 
-         else { name = parts[0]; gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M'; }
-      } else if (parts.length === 2) {
-         if (!isNaN(parseInt(parts[0]))) { num = parseInt(parts[0]); name = parts[1]; } 
-         else { name = parts[0]; gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M'; }
-      } else if (parts.length === 1) { name = parts[0]; }
-      return { id: `s-${i}`, number: num, name, gender };
-    });
-    setStudents(parsed);
-  }, []);
-
-  // 初期ロード
-  useEffect(() => {
-    const saved = localStorage.getItem('sekigae_kun_v10');
-    if (saved) {
-      try {
-        const p = JSON.parse(saved);
-        if (p.rows) setRows(p.rows);
-        if (p.cols) setCols(p.cols);
-        if (p.seats) setSeats(p.seats);
-        if (p.lockedSeats) setLockedSeats(p.lockedSeats);
-        if (p.seatAttributes) setSeatAttributes(p.seatAttributes);
-        if (p.importText) { setImportText(p.importText); parseStudents(p.importText); }
-        if (p.blackboardPosition) setBlackboardPosition(p.blackboardPosition);
-        if (p.referenceSeats) setReferenceSeats(p.referenceSeats);
-      } catch (e) { parseStudents(INITIAL_STUDENTS_TEXT); }
-    } else {
-      parseStudents(INITIAL_STUDENTS_TEXT);
-    }
-  }, [parseStudents]);
-
-  // グリッド同期
-  useEffect(() => {
-    const newSize = rows * cols;
-    setSeats(prev => {
-      const n = new Array(newSize).fill(null);
-      for (let i = 0; i < Math.min(prev.length, newSize); i++) n[i] = prev[i];
-      return n;
-    });
-  }, [rows, cols]);
-
-  // 保存
-  useEffect(() => {
-    if (students.length > 0) {
-      const data = { rows, cols, seats, lockedSeats, seatAttributes, importText, blackboardPosition, referenceSeats };
-      localStorage.setItem('sekigae_kun_v10', JSON.stringify(data));
-    }
-  }, [rows, cols, seats, lockedSeats, seatAttributes, importText, blackboardPosition, referenceSeats, students]);
-
-  const getVisualSeatNumber = (i) => {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    return (cols - 1 - col) * rows + (row + 1);
-  };
-
-  const getPartners = (i, seatList) => {
-    if (!seatList) return [];
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const res = [];
-    if (col > 0) res.push(seatList[row * cols + (col - 1)]);
-    if (col < cols - 1) res.push(seatList[row * cols + (col + 1)]);
-    return res.filter(id => id);
-  };
-
-  const playTone = useCallback((freq, type, duration, startTime = 0, vol = 0.1) => {
-    if (!isSoundEnabled) return;
-    try {
-      if (!audioCtxRef.current) {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (AC) audioCtxRef.current = new AC();
-      }
-      const ctx = audioCtxRef.current;
-      if (!ctx) return;
-      if (ctx.state === 'suspended') ctx.resume();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = type; osc.frequency.setValueAtTime(freq, ctx.currentTime + startTime);
-      gain.gain.setValueAtTime(0, ctx.currentTime + startTime);
-      gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + startTime + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startTime + duration);
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.start(ctx.currentTime + startTime); osc.stop(ctx.currentTime + startTime + duration);
-    } catch(e) {}
-  }, [isSoundEnabled]);
-
-  const sounds = {
-    playFlip: () => playTone(1000 + Math.random() * 200, 'sine', 0.1, 0, 0.08),
-    playDrumroll: () => { for(let i=0; i<12; i++) playTone(150+(i*25), 'triangle', 0.1, i*0.1, 0.15); },
-    playTada: () => [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((f, i) => playTone(f, 'triangle', 1.8, i*0.06, 0.15))
-  };
-
-  const shuffleSeatsLogic = () => {
-    let baseSeats = [...seats];
-    const lockedIds = new Set();
-    for (let i = 0; i < baseSeats.length; i++) {
-      if (lockedSeats[i] && baseSeats[i]) lockedIds.add(baseSeats[i]);
-      else baseSeats[i] = null;
-    }
-
-    let pool = students.filter(s => !lockedIds.has(s.id));
-    const hasRef = referenceSeats && referenceSeats.length === seats.length;
-    let resultSeats = [...baseSeats];
-
-    let attempts = 0;
-    while (attempts < 100) {
-      attempts++;
-      let temp = [...baseSeats];
-      let boys = pool.filter(s => s.gender === 'M').sort(() => Math.random() - 0.5);
-      let girls = pool.filter(s => s.gender === 'F').sort(() => Math.random() - 0.5);
-      
-      for (let i = 0; i < temp.length; i++) {
-        if (lockedSeats[i]) continue;
-        const attr = seatAttributes[i];
-        if (attr === 'M' && boys.length > 0) temp[i] = boys.pop().id;
-        else if (attr === 'F' && girls.length > 0) temp[i] = girls.pop().id;
-      }
-      let remaining = [...boys, ...girls].sort(() => Math.random() - 0.5);
-      for (let i = 0; i < temp.length; i++) {
-        if (!temp[i] && seatAttributes[i] !== 'EMPTY' && remaining.length > 0) temp[i] = remaining.pop().id;
-      }
-
-      if (hasRef) {
-        let fail = false;
-        if (avoidSameSeat) {
-          for (let i = 0; i < temp.length; i++) {
-            if (lockedSeats[i]) continue; 
-            if (temp[i] && temp[i] === referenceSeats[i]) { fail = true; break; }
-          }
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>English Word Werewolf</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@300;400;600&family=Noto+Sans+JP:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: #f0fdf4;
         }
-        if (!fail && avoidSamePartner) {
-          for (let i = 0; i < temp.length; i++) {
-            if (lockedSeats[i]) continue;
-            const sid = temp[i]; if (!sid) continue;
-            const curP = getPartners(i, temp);
-            const oldP = getPartners(i, referenceSeats);
-            if (curP.some(p => oldP.includes(p))) { fail = true; break; }
-          }
+        h1, h2, h3, .font-english {
+            font-family: 'Fredoka', sans-serif;
         }
-        if (fail) continue;
-      }
-      resultSeats = temp;
-      break;
-    }
-    setSeats(resultSeats);
-    setRevealState({});
-  };
+        .card-inner {
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+            position: relative;
+        }
+        .card-front, .card-back {
+            backface-visibility: hidden;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .card-back {
+            transform: rotateY(180deg);
+        }
+        .flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="text-slate-800 min-h-screen flex flex-col items-center justify-center p-4">
 
-  const shuffleWithAnim = () => {
-    if (isShuffling) return;
-    setIsShuffling(true); sounds.playDrumroll();
-    setTimeout(() => { shuffleSeatsLogic(); setIsShuffling(false); sounds.playTada(); }, 1500);
-  };
+    <div id="app" class="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden border-4 border-green-400 min-h-[600px] relative">
+        <header class="bg-green-500 text-white p-4 text-center">
+            <h1 class="text-2xl font-bold tracking-wide">🐺 Word Werewolf 🗣️</h1>
+            <p class="text-xs opacity-90">English Communication Game</p>
+        </header>
 
-  const handleSeatClick = (i) => {
-    if (activeTool === 'CURSOR') setEditingSeatIndex(i);
-    else if (activeTool === 'EMPTY') { 
-      setSeatAttributes(prev => {
-        const next = { ...prev };
-        if (next[i] === 'EMPTY') delete next[i]; 
-        else { next[i] = 'EMPTY'; setSeats(s => { const ns=[...s]; ns[i]=null; return ns; }); setLockedSeats(l => ({ ...l, [i]: false })); }
-        return next;
-      });
-    }
-    else if (activeTool === 'M') setSeatAttributes(prev => ({ ...prev, [i]: prev[i] === 'M' ? null : 'M' }));
-    else if (activeTool === 'F') setSeatAttributes(prev => ({ ...prev, [i]: prev[i] === 'F' ? null : 'F' }));
-    else if (activeTool === 'SWAP') {
-      if (swapSourceIndex === null) setSwapSourceIndex(i);
-      else {
-        setSeats(prev => { const n = [...prev]; const t = n[swapSourceIndex]; n[swapSourceIndex] = n[i]; n[i] = t; return n; });
-        setSwapSourceIndex(null);
-      }
-    }
-  };
+        <main id="main-content" class="p-6 flex flex-col items-center justify-center h-full space-y-6">
+            <!-- Loading message or initial screen -->
+        </main>
 
-  const handleUrlImport = async () => {
-    setImportError('');
-    if (!importUrl) return;
-    const match = importUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    if (!match || !match[1]) { setImportError('GoogleスプレッドシートのURLではありません'); return; }
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv`;
-    try {
-       const res = await fetch(csvUrl);
-       if (!res.ok) throw new Error();
-       const text = await res.text();
-       setImportText(text); parseStudents(text); setReferenceSeats([]); setImportUrl('');
-       alert("読み込み成功：更新ボタンを押すと反映されます");
-    } catch (e) { setImportError('読み込み失敗。共有設定を確認してください。'); }
-  };
+        <footer class="absolute bottom-2 w-full text-center text-gray-400 text-xs pb-2">
+            English Class Activity Tool
+        </footer>
+    </div>
 
-  const capture = async (type) => {
-    if (!window.html2canvas || !captureRef.current) return;
-    const canvas = await window.html2canvas(captureRef.current, {
-      scale: 3, useCORS: true,
-      onclone: (cloned) => {
-        const el = cloned.getElementById('capture-container');
-        if (el) {
-          el.style.width = '1400px'; el.style.padding = '60px'; el.style.backgroundColor = '#ffffff';
-          const grid = el.querySelector('.seat-grid');
-          if (grid) {
-            grid.style.display = 'grid';
-            grid.style.gridTemplateColumns = `repeat(${cols}, 120px)`;
-            grid.style.gridTemplateRows = `repeat(${rows}, 100px)`;
-            grid.style.gap = '15px';
-          }
-          const cells = el.querySelectorAll('.seat-cell');
-          cells.forEach(c => {
-            c.style.height = '100px'; c.style.display = 'flex'; c.style.flexDirection = 'column'; c.style.justifyContent = 'center';
-            const name = c.querySelector('.student-name');
-            if (name) { 
-                name.style.fontSize = '26px'; name.style.lineHeight = '1.3'; name.style.height = 'auto';
-                name.style.padding = '8px 0'; name.style.overflow = 'visible';
-                name.classList.remove('line-clamp-2'); 
+    <script>
+        const wordSets = [
+            { category: "Food", citizen: "Pizza", wolf: "Hamburger" },
+            { category: "Food", citizen: "Sushi", wolf: "Sashimi" },
+            { category: "Food", citizen: "Coffee", wolf: "Tea" },
+            { category: "School", citizen: "Math", wolf: "Science" },
+            { category: "School", citizen: "Pencil", wolf: "Pen" },
+            { category: "School", citizen: "Library", wolf: "Classroom" },
+            { category: "Hobbies", citizen: "Soccer", wolf: "Baseball" },
+            { category: "Hobbies", citizen: "YouTube", wolf: "TikTok" },
+            { category: "Hobbies", citizen: "Anime", wolf: "Manga" },
+            { category: "Animals", citizen: "Cat", wolf: "Dog" },
+            { category: "Animals", citizen: "Lion", wolf: "Tiger" },
+            { category: "Seasons", citizen: "Summer", wolf: "Winter" },
+            { category: "Technology", citizen: "iPhone", wolf: "Android" },
+            { category: "Travel", citizen: "Bus", wolf: "Train" }
+        ];
+
+        const discussionPhrases = [
+            { en: "Is it a food / an animal?", jp: "それは食べ物/動物ですか？" },
+            { en: "Is it big / small?", jp: "それは大きい/小さいですか？" },
+            { en: "Do you like it?", jp: "それは好きですか？" },
+            { en: "I see it every day.", jp: "毎日見かけます。" },
+            { en: "It is red / blue.", jp: "それは赤色/青色です。" },
+            { en: "We use it at school.", jp: "学校で使います。" },
+            { en: "I think it is...", jp: "私はそれは〜だと思います。" },
+            { en: "Me too. / Really?", jp: "私も。/ 本当に？" }
+        ];
+
+        let state = {
+            players: 4,
+            currentWordSet: {},
+            playerRoles: [],
+            currentPlayerIndex: 0,
+            timerSeconds: 180,
+            timerInterval: null
+        };
+
+        const appContainer = document.getElementById('main-content');
+
+        function refreshIcons() {
+            if (window.lucide) window.lucide.createIcons();
+        }
+
+        function renderStartScreen() {
+            appContainer.innerHTML = `
+                <div class="space-y-6 w-full text-center animate-fade-in">
+                    <div class="bg-green-50 p-4 rounded-xl border border-green-200 text-left">
+                        <h2 class="font-bold text-lg mb-2 text-center">How to Play</h2>
+                        <ul class="text-sm list-disc list-inside space-y-1 text-gray-600">
+                            <li>Choose number of players.</li>
+                            <li>Pass the phone to check your word.</li>
+                            <li>Discuss in English! (Don't say the word!)</li>
+                            <li>Find the Wolf (different word).</li>
+                        </ul>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="block font-bold text-gray-700">Number of Players</label>
+                        <div class="flex justify-center items-center space-x-4">
+                            <button onclick="changePlayerCount(-1)" class="w-10 h-10 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-xl">-</button>
+                            <span id="player-count-display" class="text-2xl font-bold w-8">${state.players}</span>
+                            <button onclick="changePlayerCount(1)" class="w-10 h-10 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-xl">+</button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="startGame('Random')" class="bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-lg font-bold shadow-md">🎲 Random</button>
+                        <button onclick="startGame('Food')" class="bg-orange-400 hover:bg-orange-500 text-white py-3 rounded-lg font-bold shadow-md">🍔 Food</button>
+                        <button onclick="startGame('School')" class="bg-blue-400 hover:bg-blue-500 text-white py-3 rounded-lg font-bold shadow-md">🏫 School</button>
+                        <button onclick="startGame('Hobbies')" class="bg-pink-400 hover:bg-pink-500 text-white py-3 rounded-lg font-bold shadow-md">⚽ Hobbies</button>
+                    </div>
+                </div>
+            `;
+            refreshIcons();
+        }
+
+        function changePlayerCount(delta) {
+            let newCount = state.players + delta;
+            if (newCount >= 3 && newCount <= 8) {
+                state.players = newCount;
+                document.getElementById('player-count-display').innerText = state.players;
             }
-          });
         }
-      }
-    });
-    if (type === 'png') {
-      const a = document.createElement('a'); a.download = "座席表.png"; a.href = canvas.toDataURL(); a.click();
-    } else {
-      const pdf = new window.jspdf.jsPDF({ orientation: 'landscape', format: 'a4' });
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 10, 10, pdf.internal.pageSize.getWidth()-20, 0);
-      pdf.save('座席表.pdf');
-    }
-  };
 
-  const editSeat = (act, p) => {
-    if (act === 'SET_EMPTY') { 
-      setSeats(s => { const ns=[...s]; ns[editingSeatIndex]=null; return ns; }); 
-      setLockedSeats(l => ({ ...l, [editingSeatIndex]: false })); 
-      setSeatAttributes(a => ({ ...a, [editingSeatIndex]: 'EMPTY' })); 
-    }
-    else if (act === 'SET_ATTRIBUTE') { 
-      setSeatAttributes(a => ({ ...a, [editingSeatIndex]: p })); 
-      setLockedSeats(l => ({ ...l, [editingSeatIndex]: false })); 
-      if (p) setSeats(s => { const ns=[...s]; ns[editingSeatIndex]=null; return ns; }); 
-    }
-    else if (act === 'SET_STUDENT') {
-      const prevIdx = seats.indexOf(p);
-      setSeats(s => {
-        const ns = [...s];
-        if (prevIdx !== -1) ns[prevIdx] = null;
-        ns[editingSeatIndex] = p;
-        return ns;
-      });
-      setLockedSeats(l => {
-        const nl = { ...l }; if (prevIdx !== -1) nl[prevIdx] = false;
-        nl[editingSeatIndex] = true; return nl;
-      });
-      setSeatAttributes(a => ({ ...a, [editingSeatIndex]: null }));
-    }
-    setEditingSeatIndex(null);
-  };
+        function startGame(category) {
+            let availableSets = wordSets;
+            if (category !== 'Random') {
+                availableSets = wordSets.filter(s => s.category === category);
+            }
+            const randomSet = availableSets[Math.floor(Math.random() * availableSets.length)];
+            state.currentWordSet = randomSet;
 
-  // --- 5. UI パーツ ---
-  const Blackboard = ({ className = "" }) => (
-    <div className={`w-[70%] h-14 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative my-4 flex items-center justify-center overflow-hidden rounded-sm flex-shrink-0 ${className}`}>
-      <div className={`absolute ${blackboardPosition === 'top' ? 'bottom-1' : 'top-1'} right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm`}></div>
-    </div>
-  );
+            state.playerRoles = Array(state.players).fill("citizen");
+            let wolfIndex = Math.floor(Math.random() * state.players);
+            state.playerRoles[wolfIndex] = "wolf";
 
-  const getStudentById = (id) => students.find(s => s.id === id);
+            state.currentPlayerIndex = 0;
+            renderRoleCheck();
+        }
 
-  return (
-    <div className="h-full w-full bg-gray-100 flex flex-col overflow-hidden font-sans">
-      <style>{`
-        .perspective-1000 { perspective: 1000px; }
-        .transform-style-3d { transform-style: preserve-3d; }
-        .backface-hidden { backface-visibility: hidden; }
-        .rotate-y-180 { transform: rotateY(180deg); }
-        .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-      `}</style>
+        function renderRoleCheck() {
+            if (state.currentPlayerIndex >= state.players) {
+                renderDiscussion();
+                return;
+            }
 
-      {mode === 'teacher' ? (
-        <>
-          <header className="w-full h-14 bg-white border-b px-4 flex justify-between items-center shadow-sm shrink-0 z-30">
-            <h1 className="font-bold text-gray-700 text-lg">席替えくん</h1>
-            <button onClick={() => setMode('student')} className="bg-teal-600 text-white px-3 py-1.5 rounded font-bold text-xs flex items-center gap-1 hover:bg-teal-700 transition-colors"><Monitor size={14} /> 生徒モード</button>
-          </header>
-          
-          <div className="flex flex-1 overflow-hidden">
-            <aside className={`${isSidebarCollapsed ? 'w-16' : 'w-64'} bg-white border-r h-full flex flex-col p-2 gap-3 transition-all duration-300 overflow-y-auto no-scrollbar shrink-0`}>
-              <button onClick={() => setSidebarCollapsed(!isSidebarCollapsed)} className="self-end text-gray-400 hover:text-gray-600 p-1"><ChevronLeft className={isSidebarCollapsed ? 'rotate-180' : ''} /></button>
-              
-              <button onClick={shuffleWithAnim} className="bg-indigo-600 text-white p-2 rounded font-bold text-xs flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform"><Shuffle size={14} /> {isSidebarCollapsed ? '' : '席替え実行'}</button>
-              <button onClick={() => { setSeats(new Array(rows*cols).fill(null)); setRevealState({}); }} className="bg-red-50 text-red-600 p-2 rounded font-bold text-xs border border-red-100 flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform"><Trash2 size={14} /> {isSidebarCollapsed ? '' : 'クリア'}</button>
-              
-              {!isSidebarCollapsed && (
-                <div className="space-y-4 mt-2">
-                  <div className="flex gap-1">
-                    <button onClick={() => window.print()} className="flex-1 bg-gray-100 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-gray-200 transition-colors"><Printer size={12}/> 印刷</button>
-                    <div className="relative flex-1">
-                      <button onClick={() => setShowSaveMenu(!showSaveMenu)} className="w-full bg-gray-100 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-gray-200 transition-colors"><Download size={12}/> 保存</button>
-                      {showSaveMenu && (
-                        <div className="absolute top-full left-0 w-full bg-white border shadow-lg rounded z-50 py-1">
-                          <button onClick={() => capture('png')} className="w-full p-2 text-left hover:bg-gray-50 text-[10px] flex items-center gap-1"><ImageIcon size={10}/> 画像</button>
-                          <button onClick={() => capture('pdf')} className="w-full p-2 text-left hover:bg-gray-50 text-[10px] flex items-center gap-1"><FileText size={10}/> PDF</button>
+            appContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center w-full h-full space-y-8 animate-fade-in">
+                    <div class="text-center">
+                        <span class="inline-block p-3 bg-green-100 rounded-full mb-4">
+                            <i data-lucide="user" class="w-10 h-10 text-green-600"></i>
+                        </span>
+                        <h2 class="text-2xl font-bold">Player ${state.currentPlayerIndex + 1}</h2>
+                        <p class="text-gray-500">Pass the device to Player ${state.currentPlayerIndex + 1}</p>
+                    </div>
+
+                    <div id="card-container" class="relative w-64 h-40 cursor-pointer" onclick="revealCard(this)">
+                        <div class="card-inner w-full h-full">
+                            <div class="card-front bg-slate-800 text-white rounded-xl shadow-xl flex flex-col items-center justify-center">
+                                <i data-lucide="eye" class="w-8 h-8 mb-2"></i>
+                                <span class="font-bold text-lg">Tap to see your word</span>
+                            </div>
+                            <div class="card-back bg-white border-4 border-green-500 text-slate-800 rounded-xl shadow-xl flex flex-col items-center justify-center">
+                                <p class="text-xs text-gray-500 uppercase mb-1">Your Word</p>
+                                <p id="secret-word" class="text-3xl font-bold font-english text-green-600">???</p>
+                            </div>
                         </div>
-                      )}
                     </div>
-                  </div>
 
-                  <section className="bg-green-50 p-2 rounded border border-green-100">
-                    <h2 className="font-bold text-[10px] text-green-600 mb-2 uppercase flex items-center gap-1"><Save size={10}/> 設定データ管理</h2>
-                    <div className="flex gap-1">
-                      <button onClick={() => {
-                        const data = { rows, cols, seats, lockedSeats, seatAttributes, importText, blackboardPosition, referenceSeats };
-                        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "sekigae_data.json"; a.click();
-                      }} className="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] flex items-center justify-center gap-1 hover:bg-green-100"><Download size={12}/> 保存</button>
-                      <label className="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] flex items-center justify-center gap-1 cursor-pointer hover:bg-green-100">
-                        <FolderOpen size={12}/> 読込
-                        <input type="file" className="hidden" accept=".json" onChange={(e) => {
-                          const file = e.target.files[0]; if (!file) return;
-                          const reader = new FileReader();
-                          reader.onload = (ev) => {
-                            try {
-                              const p = JSON.parse(ev.target.result);
-                              setReferenceSeats([...(p.seats || [])]); setRows(p.rows || 8); setCols(p.cols || 6); setSeats(p.seats || []);
-                              setLockedSeats(p.lockedSeats || {}); setSeatAttributes(p.seatAttributes || {}); setImportText(p.importText || INITIAL_STUDENTS_TEXT);
-                              setBlackboardPosition(p.blackboardPosition || 'top'); parseStudents(p.importText || INITIAL_STUDENTS_TEXT);
-                              alert("読込完了：この配置を「前回」として固定席以外を避ける機能が有効になります。");
-                            } catch (err) { alert("無効なファイルです"); }
-                          };
-                          reader.readAsText(file);
-                        }}/>
-                      </label>
-                    </div>
-                  </section>
-
-                  <section className="bg-indigo-50 p-2 rounded border border-indigo-100">
-                    <h2 className="font-bold text-[10px] text-indigo-400 mb-2 uppercase flex items-center gap-1"><PaintBucket size={10}/> 一括設定</h2>
-                    <div className="grid grid-cols-4 gap-1">
-                       <button onClick={() => setActiveTool('CURSOR')} className={`p-1 border rounded text-[10px] flex justify-center ${activeTool==='CURSOR'?'bg-white shadow text-indigo-700 font-bold':'text-indigo-400 hover:bg-white/50'}`}><MousePointer2 size={12}/></button>
-                       <button onClick={() => setActiveTool('EMPTY')} className={`p-1 border rounded text-[10px] flex justify-center ${activeTool==='EMPTY'?'bg-gray-700 text-white':'text-indigo-400 hover:bg-white/50'}`}><UserX size={12}/></button>
-                       <button onClick={() => setActiveTool('M')} className={`p-1 border rounded text-[10px] flex justify-center ${activeTool==='M'?'bg-blue-500 text-white font-bold':'text-blue-500 hover:bg-white/50'}`}>♂</button>
-                       <button onClick={() => setActiveTool('F')} className={`p-1 border rounded text-[10px] flex justify-center ${activeTool==='F'?'bg-pink-500 text-white font-bold':'text-pink-500 hover:bg-white/50'}`}>♀</button>
-                    </div>
-                    <button onClick={() => setActiveTool('SWAP')} className={`w-full mt-1 p-1 border rounded text-[10px] ${activeTool==='SWAP'?'bg-orange-500 text-white font-bold text-center':'text-orange-500 hover:bg-white/50 border-orange-200'}`}>席の入れ替え</button>
-                  </section>
-
-                  <section className="border rounded p-2 text-[11px]">
-                    <div className="flex justify-between items-center cursor-pointer select-none" onClick={() => setIsRosterOpen(!isRosterOpen)}><span className="font-bold text-gray-500 flex items-center gap-1"><Users size={12}/> 名簿編集</span>{isRosterOpen?<ChevronDown size={14}/>:<ChevronRight size={14}/>}</div>
-                    {isRosterOpen && (
-                      <div className="mt-2 space-y-1">
-                        <div className="flex gap-1">
-                          <input type="text" placeholder="URL入力" className="flex-1 p-1 border rounded text-[9px]" value={importUrl} onChange={e => setImportUrl(e.target.value)} />
-                          <button onClick={handleUrlImport} className="bg-green-600 text-white p-1 rounded transition-transform active:scale-90"><LinkIcon size={12}/></button>
-                        </div>
-                        {importError && <p className="text-[8px] text-red-500 leading-tight">{importError}</p>}
-                        <textarea value={importText} onChange={e => { setImportText(e.target.value); parseStudents(e.target.value); }} className="w-full h-32 p-1 border rounded text-[10px] font-mono no-scrollbar" />
-                        <div className="flex gap-1">
-                          <button onClick={() => { parseStudents(importText); setReferenceSeats([...seats]); alert("更新完了"); }} className="flex-1 bg-gray-100 py-1 rounded font-bold text-[10px] transition-transform active:scale-95 hover:bg-gray-200 border">更新</button>
-                          <button onClick={() => { setImportText(''); setStudents([]); }} className="flex-1 bg-red-50 text-red-600 py-1 rounded border border-red-100 font-bold text-[10px] active:scale-95">クリア</button>
-                        </div>
-                      </div>
-                    )}
-                  </section>
-
-                  <div className="text-[11px] space-y-2">
-                    <div className="flex items-center gap-2 justify-between">
-                      <div className="flex items-center gap-1 shrink-0 font-bold">横 <button onClick={() => setCols(Math.max(1, cols-1))} className="bg-gray-100 w-5 rounded border">-</button><span className="font-mono w-4 text-center">{cols}</span><button onClick={() => setCols(cols+1)} className="bg-gray-100 w-5 rounded border">+</button></div>
-                      <div className="flex items-center gap-1 shrink-0 font-bold">縦 <button onClick={() => setRows(Math.max(1, rows-1))} className="bg-gray-100 w-5 rounded border">-</button><span className="font-mono w-4 text-center">{rows}</span><button onClick={() => setRows(rows+1)} className="bg-gray-100 w-5 rounded border">+</button></div>
-                    </div>
-                    <button onClick={() => setBlackboardPosition(p => p==='top'?'bottom':'top')} className="w-full bg-white border py-1 rounded text-gray-500 text-[10px] flex items-center justify-center gap-1 hover:bg-gray-50 transition-colors"><ArrowUpDown size={12}/> 黒板↑↓切替</button>
-                    <div className="p-2 bg-gray-50 border rounded space-y-2 shadow-inner">
-                      <label className="flex items-center gap-2 text-[10px] cursor-pointer"><input type="checkbox" checked={avoidSameSeat} onChange={() => setAvoidSameSeat(!avoidSameSeat)}/> 前回と同じ席を避ける</label>
-                      <label className="flex items-center gap-2 text-[10px] cursor-pointer"><input type="checkbox" checked={avoidSamePartner} onChange={() => setAvoidSamePartner(!avoidSamePartner)}/> 前回と同じペアを避ける</label>
-                      <p className="text-[9px] text-gray-400 mt-1 leading-tight flex items-start gap-1 font-bold italic"><AlertCircle size={8} className="shrink-0 mt-0.5"/> ※データ読込後に有効</p>
-                    </div>
-                  </div>
+                    <button id="next-btn" onclick="nextPlayer()" class="hidden w-full bg-green-500 text-white font-bold py-3 rounded-lg shadow-lg">Next Player</button>
                 </div>
-              )}
-            </aside>
+            `;
+            refreshIcons();
+        }
 
-            <main className="flex-1 overflow-auto flex flex-col items-center p-4 pt-0 bg-gray-100 no-scrollbar pb-[100px]">
-              <div id="capture-container" ref={captureRef} className="flex flex-col items-center justify-start bg-gray-100 p-2 rounded-xl">
-                {blackboardPosition === 'top' && <Blackboard />}
-                <div className="seat-grid grid gap-1 p-2 bg-white rounded-lg shadow-inner flex-shrink-0" style={{ gridTemplateColumns: `repeat(${cols}, 120px)`, gridTemplateRows: `repeat(${rows}, 60px)` }}>
-                  {Array.from({ length: rows * cols }).map((_, i) => {
-                    const studentId = seats[i];
-                    const student = getStudentById(studentId);
-                    const attr = seatAttributes[i];
-                    const isLocked = lockedSeats[i];
-                    const isSwapping = activeTool === 'SWAP' && swapSourceIndex === i;
-                    let bgColor = 'bg-gray-50', ring = isSwapping ? 'ring-4 ring-orange-400 z-10' : '';
-                    if (student) bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
-                    else if (attr === 'EMPTY') bgColor = 'bg-gray-200';
-                    else if (attr === 'M') bgColor = 'bg-blue-50 border-dashed border-blue-300';
-                    else if (attr === 'F') bgColor = 'bg-pink-50 border-dashed border-pink-300';
-                    else if (isLocked) bgColor = 'bg-white border-red-200';
+        function revealCard(el) {
+            if (el.classList.contains('flipped')) return;
+            el.classList.add('flipped');
+            const role = state.playerRoles[state.currentPlayerIndex];
+            document.getElementById('secret-word').innerText = role === 'wolf' ? state.currentWordSet.wolf : state.currentWordSet.citizen;
+            setTimeout(() => document.getElementById('next-btn').classList.remove('hidden'), 400);
+        }
 
-                    const anim = isShuffling ? { transform: `translate(${(Math.random()-0.5)*40}px, ${(Math.random()-0.5)*40}px) rotate(${(Math.random()-0.5)*20}deg)`, transition: 'transform 0.2s' } : {};
-                    
-                    return (
-                      <div key={i} onClick={() => handleSeatClick(i)} className={`seat-cell rounded border border-gray-300 flex flex-col items-center justify-center relative ${bgColor} ${ring} overflow-hidden transition-all duration-300 cursor-pointer hover:border-gray-400`} style={{ width: '120px', height: '60px', ...anim }}>
-                        {student ? (
-                          <>
-                            <span className="text-[10px] font-bold text-gray-400 absolute top-0.5 left-1 select-none">{student.number}</span>
-                            <div className="student-name text-[13px] font-bold text-gray-800 line-clamp-2 text-center px-1 select-none">{student.name}</div>
-                          </>
-                        ) : <span className="text-gray-300 font-bold text-xs select-none">{attr==='EMPTY'?'×':getVisualSeatNumber(i)}</span>}
-                        <div className="absolute top-0.5 right-1">{!student && isLocked ? <Lock size={10} className="text-red-400"/> : ''}</div>
-                      </div>
-                    );
-                  })}
+        function nextPlayer() {
+            state.currentPlayerIndex++;
+            renderRoleCheck();
+        }
+
+        function renderDiscussion() {
+            state.timerSeconds = 180;
+            appContainer.innerHTML = `
+                <div class="w-full h-full flex flex-col animate-fade-in">
+                    <div class="text-center mb-4">
+                        <h2 class="text-xl font-bold text-gray-700">Discussion Time!</h2>
+                        <div class="flex items-center justify-center space-x-2 mt-2">
+                             <i data-lucide="timer" class="text-orange-500"></i>
+                             <span id="timer-display" class="text-4xl font-mono font-bold text-orange-500">03:00</span>
+                        </div>
+                    </div>
+                    <div class="flex-1 overflow-y-auto bg-gray-50 rounded-xl border p-4 mb-4 shadow-inner">
+                        <h3 class="text-sm font-bold text-gray-400 mb-2 uppercase">Useful Phrases</h3>
+                        <div class="space-y-2">
+                            ${discussionPhrases.map(p => `
+                                <div class="bg-white p-3 rounded-lg border shadow-sm">
+                                    <p class="font-semibold text-indigo-600">${p.en}</p>
+                                    <p class="text-xs text-gray-400">${p.jp}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <button onclick="finishDiscussion()" class="w-full bg-red-500 text-white font-bold py-4 rounded-lg shadow-md">Stop & Vote</button>
                 </div>
-                {blackboardPosition === 'bottom' && <Blackboard />}
-              </div>
-            </main>
-          </div>
-        </>
-      ) : (
-        <div className="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans p-4">
-          <div className="absolute inset-0 opacity-5" style={{ backgroundImage: 'radial-gradient(circle, #ffffff 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
-          <div className="flex-1 w-full flex flex-col items-center justify-start z-10 overflow-y-auto no-scrollbar pb-[120px]">
-            {blackboardPosition === 'top' && <Blackboard />}
-            <div className="seat-grid grid gap-2 p-4 justify-center flex-shrink-0" style={{ gridTemplateColumns: `repeat(${cols}, 120px)`, gridTemplateRows: `repeat(${rows}, 60px)` }}>
-              {Array.from({ length: rows * cols }).map((_, i) => {
-                const studentId = seats[i];
-                const student = getStudentById(studentId);
-                const isRev = revealState[i];
-                if (!student && (seatAttributes[i] === 'EMPTY' || !seats[i])) return <div key={i} className="rounded border border-white/5 bg-black/10 flex items-center justify-center opacity-30 text-white/50 text-xs" style={{ width: '120px', height: '60px' }}>×</div>;
-                const anim = isShuffling ? { transform: `translate(${(Math.random()-0.5)*400}px, ${(Math.random()-0.5)*400}px) rotate(${(Math.random()-0.5)*360}deg)`, opacity: 0.5 } : {};
-                return (
-                  <div key={i} onClick={() => !isShuffling && (setRevealState(p => ({...p, [i]: !p[i]})), sounds.playFlip())} className="perspective-1000 cursor-pointer transition-transform hover:scale-105" style={{ width: '120px', height: '60px', ...anim }}>
-                    <div className={`relative w-full h-full transform-style-3d transition-transform duration-500 ${isRev?'rotate-y-180':''}`} style={{ transform: isRev?'rotateY(180deg)':'rotateY(0deg)' }}>
-                      <div className="absolute inset-0 backface-hidden bg-[#f3efe4] rounded-lg shadow-md border-b-4 border-r-4 border-gray-300 flex flex-col items-center justify-center text-gray-400">
-                        <span className="text-[10px] font-bold">NO.</span><span className="text-xl font-bold">{student?.number || getVisualSeatNumber(i)}</span>
-                      </div>
-                      <div className={`absolute inset-0 backface-hidden rotate-y-180 rounded-lg shadow-md border-b-4 border-r-4 ${student?.gender==='M'?'bg-blue-100 border-blue-200':'bg-pink-100 border-pink-200'} flex items-center justify-center text-gray-800`} style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden' }}>
-                        {student && (
-                          <>
-                            <span className="absolute top-1 left-2 text-[10px] font-bold opacity-30">{student.number}</span>
-                            <div className="text-[13px] font-bold text-center px-1">{student.name}</div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {blackboardPosition === 'bottom' && <Blackboard />}
-          </div>
-          <div className="fixed bottom-4 left-0 right-0 flex justify-center items-center z-50">
-            {isStudentControlsVisible ? (
-              <div className="bg-black/75 backdrop-blur-lg p-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-white/10">
-                <button onClick={() => setMode('teacher')} className="px-4 py-2 bg-white/10 text-white rounded-xl font-bold text-sm hover:bg-white/20 transition-colors">設定モード</button>
-                <button onClick={() => setBlackboardPosition(p => p==='top'?'bottom':'top')} className="px-4 py-2 bg-white/10 text-white rounded-xl font-bold text-sm flex items-center gap-1 hover:bg-white/20 transition-colors"><ArrowUpDown size={14}/> 黒板↑↓</button>
-                <button onClick={() => setIsSoundEnabled(!isSoundEnabled)} className="p-2 bg-white/10 text-white rounded-full hover:bg-white/20 transition-colors">{isSoundEnabled ? <Volume2 size={18}/> : <VolumeX size={18}/>}</button>
-                <div className="w-px h-8 bg-white/10 mx-2"></div>
-                <button onClick={shuffleWithAnim} disabled={isShuffling} className="bg-indigo-500 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 text-sm shadow-lg active:scale-95 hover:bg-indigo-600 disabled:bg-gray-600 transition-all"><Shuffle size={14}/> 席替え</button>
-                <button onClick={() => { 
-                    sounds.playDrumroll(); 
-                    const ids = Array.from({length: rows*cols}, (_, idx) => idx).sort(()=>Math.random()-0.5); 
-                    ids.forEach((idx,i)=>setTimeout(()=>{setRevealState(p=>({...p,[idx]:true}));sounds.playFlip()},i*300+1000));
-                }} disabled={isShuffling} className="bg-yellow-500 text-black px-6 py-2 rounded-xl font-bold text-sm shadow-lg flex items-center gap-1 active:scale-95 hover:bg-yellow-400 disabled:bg-gray-600 transition-all"><Eye size={14}/> 公開</button>
-                <button onClick={() => { sounds.playTada(); const n={}; Array.from({length: rows*cols}).forEach((_,i)=>n[i]=true); setRevealState(n); }} disabled={isShuffling} className="bg-green-600 text-white px-8 py-2 rounded-xl font-bold text-sm shadow-lg flex items-center gap-1 active:scale-95 hover:bg-green-500 disabled:bg-gray-600 transition-all"><CheckCircle size={14}/> 一斉</button>
-                <button onClick={() => setStudentControlsVisible(false)} className="p-2 bg-white/10 text-white rounded-full hover:bg-white/20 transition-all"><X size={18}/></button>
-              </div>
-            ) : (
-                <button onClick={() => setStudentControlsVisible(true)} className="fixed bottom-6 right-6 bg-indigo-500 text-white p-4 rounded-full shadow-2xl z-50 transition-transform active:scale-90 hover:bg-indigo-600 animate-bounce"><ChevronRight className="-rotate-90" /></button>
-            )}
-          </div>
-        </div>
-      )}
+            `;
+            refreshIcons();
+            startTimer();
+        }
 
-      {editingSeatIndex !== null && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm shadow-inner" onClick={() => setEditingSeatIndex(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh] transition-all" onClick={e => e.stopPropagation()}>
-            <div className="p-5 border-b bg-gray-50 flex justify-between items-center">
-              <div className="flex items-center gap-2"><Edit3 size={18} className="text-gray-400" /><h3 className="font-bold text-gray-700">座席 No.{getVisualSeatNumber(editingSeatIndex)} の設定</h3></div>
-              <button onClick={() => setEditingSeatIndex(null)} className="text-gray-400 hover:text-gray-600 transition-colors p-1"><XCircle size={24}/></button>
-            </div>
-            <div className="p-5 space-y-5 overflow-y-auto no-scrollbar">
-              <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => editSeat('SET_EMPTY', 'EMPTY')} className={`p-4 border rounded-2xl text-xs font-bold transition-all ${seatAttributes[editingSeatIndex]==='EMPTY'?'bg-gray-800 text-white border-gray-800 shadow-inner':'bg-white hover:bg-gray-50'}`}>空席にする</button>
-                <button onClick={() => editSeat('SET_ATTRIBUTE', null)} className={`p-4 border rounded-2xl text-xs font-bold transition-all ${!seatAttributes[editingSeatIndex] && !lockedSeats[editingSeatIndex]?'bg-indigo-600 text-white border-indigo-600 shadow-md':'bg-white hover:bg-gray-50'}`}>指定なし</button>
-                <button onClick={() => editSeat('SET_ATTRIBUTE', 'M')} className={`p-3 border rounded-2xl text-xs font-bold transition-all ${seatAttributes[editingSeatIndex]==='M'?'bg-blue-600 text-white border-blue-600 shadow-md':'bg-white border-blue-100 text-blue-600 hover:bg-blue-50'}`}>♂ 男子専用</button>
-                <button onClick={() => editSeat('SET_ATTRIBUTE', 'F')} className={`p-3 border rounded-2xl text-xs font-bold transition-all ${seatAttributes[editingSeatIndex]==='F'?'bg-pink-600 text-white border-pink-600 shadow-md':'bg-white border-pink-100 text-pink-600 hover:bg-pink-50'}`}>♀ 女子専用</button>
-              </div>
-              <div className="relative">
-                <div className="absolute left-4 top-3.5 text-gray-400"><Users size={16}/></div>
-                <input type="text" placeholder="名前で絞り込み..." className="w-full pl-11 pr-4 py-3 bg-gray-100 border-none rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-              </div>
-              <div className="border rounded-2xl divide-y overflow-hidden bg-gray-50">
-                {students.filter(s => !new Set(seats.filter(id => id !== null && id !== seats[editingSeatIndex])).has(s.id) && (s.name || '').includes(searchQuery)).map(s => (
-                  <button key={s.id} onClick={() => editSeat('SET_STUDENT', s.id)} className="w-full p-4 text-left flex justify-between items-center hover:bg-indigo-50 transition-colors group">
-                    <div className="flex items-center gap-4">
-                      <span className="text-gray-400 font-mono text-xs w-6">{s.number}</span>
-                      <span className="font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">{s.name}</span>
+        function startTimer() {
+            if (state.timerInterval) clearInterval(state.timerInterval);
+            state.timerInterval = setInterval(() => {
+                state.timerSeconds--;
+                const m = Math.floor(state.timerSeconds / 60);
+                const s = state.timerSeconds % 60;
+                const display = document.getElementById('timer-display');
+                if (display) display.innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                if (state.timerSeconds <= 0) finishDiscussion();
+            }, 1000);
+        }
+
+        function finishDiscussion() {
+            clearInterval(state.timerInterval);
+            renderResult();
+        }
+
+        function renderResult() {
+            const citizenWord = state.currentWordSet.citizen;
+            const wolfWord = state.currentWordSet.wolf;
+            let list = state.playerRoles.map((role, i) => `
+                <div class="flex items-center justify-between p-3 rounded-lg border ${role === 'wolf' ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold">${i + 1}</div>
+                        <span class="font-bold">${role === 'wolf' ? wolfWord : citizenWord}</span>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold ${s.gender==='M'?'bg-blue-50 text-blue-600':'bg-pink-50 text-pink-600'}`}>{s.gender==='M'?'男':'女'}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                    <span class="text-[10px] font-bold px-2 py-1 rounded-full ${role === 'wolf' ? 'bg-red-500 text-white' : 'bg-green-500 text-white'}">${role.toUpperCase()}</span>
+                </div>
+            `).join('');
+
+            appContainer.innerHTML = `
+                <div class="w-full h-full flex flex-col space-y-4 animate-fade-in text-center">
+                    <h2 class="text-2xl font-bold text-gray-800">Result</h2>
+                    <div class="flex-1 overflow-y-auto space-y-2">${list}</div>
+                    <div class="bg-yellow-50 p-4 rounded-xl border border-yellow-200 flex justify-around">
+                        <div><p class="text-[10px] text-gray-500">Citizen</p><p class="font-bold text-green-700">${citizenWord}</p></div>
+                        <div class="w-px h-8 bg-yellow-200"></div>
+                        <div><p class="text-[10px] text-gray-500">Wolf</p><p class="font-bold text-red-600">${wolfWord}</p></div>
+                    </div>
+                    <button onclick="renderStartScreen()" class="w-full bg-indigo-500 text-white font-bold py-3 rounded-lg">Play Again</button>
+                </div>
+            `;
+            refreshIcons();
+        }
+
+        window.onload = renderStartScreen;
+    </script>
+</body>
+</html>
