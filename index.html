@@ -516,49 +516,88 @@
             state.showSaveMenu = false; render();
             const el = document.getElementById('capture-container');
             if (!el) return;
+
+            // html2canvas実行前にスクロール位置をリセット（iOSバグ対策）
+            window.scrollTo(0, 0);
+
             try {
+                // scaleを2に調整（iPadのメモリ制限対策）
                 const canvas = await html2canvas(el, {
-                    scale: 3, backgroundColor: '#ffffff', useCORS: true,
+                    scale: 2, 
+                    backgroundColor: '#ffffff', 
+                    useCORS: true,
+                    logging: false,
                     onclone: (cloned) => {
                         const target = cloned.getElementById('capture-container');
                         if (target) {
-                            target.style.width = '1400px'; target.style.padding = '60px';
+                            target.style.width = '1200px'; 
+                            target.style.height = 'auto';
+                            target.style.padding = '40px';
                             const grid = target.querySelector('.seat-grid');
                             if (grid) {
                                 grid.style.display = 'grid';
-                                grid.style.gridTemplateColumns = `repeat(${state.cols}, 120px)`;
+                                grid.style.gridTemplateColumns = `repeat(${state.cols}, 1fr)`;
                                 grid.style.gridTemplateRows = `repeat(${state.rows}, auto)`; 
-                                grid.style.gap = '15px';
+                                grid.style.gap = '10px';
+                                grid.style.width = '100%';
                             }
                             const cells = target.querySelectorAll('.seat-cell');
                             cells.forEach(cell => {
-                                cell.style.height = '100px';
+                                cell.style.height = '80px';
                                 cell.style.display = 'flex';
                                 cell.style.flexDirection = 'column';
                                 cell.style.alignItems = 'center';
                                 cell.style.justifyContent = 'center';
                                 const nameDiv = cell.querySelector('.student-name');
                                 if (nameDiv) { 
-                                    nameDiv.style.fontSize = '22px'; 
-                                    nameDiv.style.lineHeight = '1.1'; 
+                                    nameDiv.style.fontSize = '20px'; 
+                                    nameDiv.style.lineHeight = '1.2'; 
                                     nameDiv.classList.remove('line-clamp-2'); 
-                                    nameDiv.style.padding = '0 8px';
+                                    nameDiv.style.padding = '0 5px';
                                     nameDiv.style.wordBreak = 'break-all';
                                 }
                             });
                         }
                     }
                 });
+
                 if (type === 'png') {
                     const dataUrl = canvas.toDataURL('image/png');
                     openSavePreview(dataUrl);
                 } else {
-                    const imgData = canvas.toDataURL('image/png');
-                    const pdf = new jspdf.jsPDF({ orientation: 'landscape', format: 'a4' });
-                    pdf.addImage(imgData, 'PNG', 10, 10, pdf.internal.pageSize.getWidth()-20, 0);
+                    const imgData = canvas.toDataURL('image/png', 1.0);
+                    const pdf = new jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                    
+                    const pageWidth = pdf.internal.pageSize.getWidth();
+                    const pageHeight = pdf.internal.pageSize.getHeight();
+                    const margin = 10;
+                    const maxW = pageWidth - (margin * 2);
+                    const maxH = pageHeight - (margin * 2);
+                    
+                    // 画像の比率を計算してA4内に収める
+                    const imgW = canvas.width;
+                    const imgH = canvas.height;
+                    const ratio = imgW / imgH;
+                    
+                    let finalW = maxW;
+                    let finalH = finalW / ratio;
+                    
+                    // 高さがはみ出す場合は高さ基準でリサイズ
+                    if (finalH > maxH) {
+                        finalH = maxH;
+                        finalW = finalH * ratio;
+                    }
+                    
+                    const x = (pageWidth - finalW) / 2;
+                    const y = (pageHeight - finalH) / 2;
+
+                    pdf.addImage(imgData, 'PNG', x, y, finalW, finalH);
                     pdf.save('座席表.pdf');
                 }
-            } catch (e) { alert("エラーが発生しました。"); }
+            } catch (e) { 
+                console.error(e);
+                alert("保存中にエラーが発生しました。"); 
+            }
         };
 
         function getStudent(id) { return state.students.find(s => s.id === id); }
@@ -653,7 +692,6 @@
                         </section>
 
                         <div class="text-[11px] space-y-2 mt-4 bg-gray-50 p-2 rounded">
-                            <!-- 横幅・縦幅を1行に集約 -->
                             <div class="flex items-center justify-between gap-1 text-gray-600">
                                 <div class="flex items-center gap-1">
                                     <span class="font-bold">横</span>
