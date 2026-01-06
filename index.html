@@ -44,68 +44,67 @@
     <input type="file" id="import-file-input" class="hidden" accept=".json" onchange="importDataFromFile(event)">
 
     <script>
-        // --- データ定義 ---
-        const INITIAL_STUDENTS_TEXT = `1, 佐藤 健, 男
-2, 鈴木 愛, 女
-3, 高橋 翔, 男
-4, 田中 美咲, 女
-5, 伊藤 翼, 男
-6, 渡辺 結衣, 女
-7, 山本 蓮, 男
-8, 中村 陽菜, 女
-9, 小林 湊, 男
-10, 加藤 葵, 女
-11, 吉田 樹, 男
-12, 山田 凛, 女
-13, 佐々木 陸, 男
-14, 山口 澪, 女
-15, 松本 蒼, 男
-16, 井上 紬, 女
-17, 木村 大和, 男
-18, 林 杏奈, 女
-19, 斎藤 悠真, 男
-20, 清水 桜, 女
-21, 山崎 瑛太, 男
-22, 池田 楓, 女
-23, 橋本 朝陽, 男
-24, 阿部 菫, 女
-25, 宮本 琉生, 男
-26, 石川 陽菜, 女
-27, 中川 湊斗, 男
-28, 野口 結菜, 女
-29, 酒井 大翔, 男
-30, 村上 莉子, 女
-31, 小川 悠人, 男
-32, 長谷川 咲良, 女
-33, 岡田 陽向, 男
-34, 藤田 結衣, 女
-35, 後藤 陸, 男
-36, 近藤 陽菜, 女
-37, 石井 湊, 男
-38, 小島 葵, 女
-39, 遠藤 樹, 男
-40, 青木 凛, 女
-41, 藤井 陸, 男
-42, 西村 澪, 女
-43, 安藤 蒼, 男
-44, 辻 紬, 女
-45, 山下 大和, 男
-46, 岡本 杏奈, 女
-47, 森本 悠真, 男
-48, 今井 桜, 女`;
+        // --- 1. まずデータを定義 ---
+        const INITIAL_STUDENTS_TEXT = `1, 赤木 美咲, 女
+2, 伊藤 結衣, 女
+3, 上田 陽菜, 女
+4, 江口 葵, 女
+5, 太田 凛, 女
+6, 加藤 紬, 女
+7, 木村 杏奈, 女
+8, 工藤 桜, 女
+9, 佐々木 楓, 女
+10, 佐藤 菫, 女
+11, 鈴木 莉子, 女
+12, 高橋 咲良, 女
+13, 田中 萌, 女
+14, 中島 くるみ, 女
+15, 西村 栞, 女
+16, 長谷川 奈々, 女
+17, 林 遥, 女
+18, 藤田 詩織, 女
+19, 村上 愛, 女
+20, 山口 花, 女
+21, 安藤 健, 男
+22, 池田 翔, 男
+23, 石井 翼, 男
+24, 市川 蓮, 男
+25, 遠藤 湊, 男
+26, 岡田 樹, 男
+27, 小川 陸, 男
+28, 金子 大和, 男
+29, 小林 悠真, 男
+30, 近藤 瑛太, 男
+31, 斉藤 朝陽, 男
+32, 酒井 琉生, 男
+33, 坂本 湊斗, 男
+34, 清水 大翔, 男
+35, 菅原 悠人, 男
+36, 武井 颯太, 男
+37, 竹内 拓海, 男
+38, 中村 悠斗, 男
+39, 野口 翔太, 男
+40, 橋本 隼人, 男
+41, 長谷川 健太, 男
+42, 馬場 駿, 男
+43, 福田 亮太, 男
+44, 前田 雄大, 男
+45, 松本 太陽, 男
+46, 森 一真, 男
+47, 山崎 輝, 男
+48, 渡辺 拓己, 男`;
 
-        // --- 状態管理 ---
+        // --- 2. 状態管理 ---
         let state = {
             mode: 'teacher', 
             students: [],
             rows: 8,
             cols: 6,
             seats: [], 
+            referenceSeats: [], // 比較用の基準
             lockedSeats: {}, 
             seatAttributes: {}, 
             importText: INITIAL_STUDENTS_TEXT,
-            importUrl: '',
-            importError: '',
             revealState: {},
             blackboardPosition: 'top',
             isShuffling: false,
@@ -117,70 +116,44 @@
             isRosterOpen: true, 
             isSoundEnabled: true,
             isStudentControlsVisible: true,
-            isSidebarCollapsed: false 
+            isSidebarCollapsed: false,
+            avoidSameSeat: false,
+            avoidSamePartner: false
         };
 
-        // --- 保存・読込ロジック (Simple Storage) ---
-        
-        // ブラウザへの自動保存
+        // --- 保存・読込 ---
         function saveToLocalStorage() {
-            const dataToSave = {
-                rows: state.rows,
-                cols: state.cols,
-                seats: state.seats,
-                lockedSeats: state.lockedSeats,
-                seatAttributes: state.seatAttributes,
-                importText: state.importText,
-                blackboardPosition: state.blackboardPosition
-            };
-            localStorage.setItem('sekigae_kun_data', JSON.stringify(dataToSave));
+            try {
+                const dataToSave = {
+                    rows: state.rows, cols: state.cols, seats: state.seats,
+                    lockedSeats: state.lockedSeats, seatAttributes: state.seatAttributes,
+                    importText: state.importText, blackboardPosition: state.blackboardPosition,
+                    referenceSeats: state.referenceSeats
+                };
+                localStorage.setItem('sekigae_kun_data_v3', JSON.stringify(dataToSave));
+            } catch (e) {}
         }
 
-        // ブラウザからの自動読み込み
         function loadFromLocalStorage() {
-            const saved = localStorage.getItem('sekigae_kun_data');
+            const saved = localStorage.getItem('sekigae_kun_data_v3');
             if (saved) {
                 try {
                     const parsed = JSON.parse(saved);
-                    state.rows = parsed.rows || state.rows;
-                    state.cols = parsed.cols || state.cols;
-                    state.seats = parsed.seats || state.seats;
-                    state.lockedSeats = parsed.lockedSeats || {};
-                    state.seatAttributes = parsed.seatAttributes || {};
-                    state.importText = parsed.importText || state.importText;
-                    state.blackboardPosition = parsed.blackboardPosition || 'top';
-                } catch (e) {
-                    console.error("読込エラー", e);
-                }
+                    Object.assign(state, parsed);
+                } catch (e) {}
             }
         }
 
-        // ファイルとして書き出し
         window.exportDataToFile = () => {
-            const data = {
-                version: "1.0",
-                timestamp: new Date().toLocaleString(),
-                rows: state.rows,
-                cols: state.cols,
-                seats: state.seats,
-                lockedSeats: state.lockedSeats,
-                seatAttributes: state.seatAttributes,
-                importText: state.importText,
-                blackboardPosition: state.blackboardPosition
-            };
+            const data = { ...state, students: undefined, revealState: {} };
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url;
+            a.href = URL.createObjectURL(blob);
             a.download = `席替えくん設定_${new Date().toLocaleDateString().replace(/\//g,'-')}.json`;
             a.click();
-            URL.revokeObjectURL(url);
         };
 
-        // ファイルから読み込み
-        window.triggerFilePicker = () => {
-            document.getElementById('import-file-input').click();
-        };
+        window.triggerFilePicker = () => document.getElementById('import-file-input').click();
 
         window.importDataFromFile = (event) => {
             const file = event.target.files[0];
@@ -189,31 +162,37 @@
             reader.onload = (e) => {
                 try {
                     const parsed = JSON.parse(e.target.result);
-                    state.rows = parsed.rows || 8;
-                    state.cols = parsed.cols || 6;
-                    state.seats = parsed.seats || [];
-                    state.lockedSeats = parsed.lockedSeats || {};
-                    state.seatAttributes = parsed.seatAttributes || {};
-                    state.importText = parsed.importText || INITIAL_STUDENTS_TEXT;
-                    state.blackboardPosition = parsed.blackboardPosition || 'top';
-                    
+                    state.referenceSeats = [...(parsed.seats || [])];
+                    Object.assign(state, parsed);
                     parseStudents(state.importText);
                     initSeats();
-                    alert("設定を読み込みました！");
-                } catch (err) {
-                    alert("ファイルの形式が正しくありません。");
-                }
+                    alert("読込完了：この配置を「前回」として固定席以外を避ける機能が有効になります。");
+                } catch (err) { alert("形式が違います。"); }
             };
             reader.readAsText(file);
-            event.target.value = ''; // Clear for next time
+            event.target.value = '';
         };
 
-        // --- 音声再生 ---
-        let audioCtx = null;
-        function initAudio() {
-            const AC = window.AudioContext || window.webkitAudioContext;
-            if (AC && !audioCtx) audioCtx = new AC();
+        // --- 計算ロジック ---
+        function getVisualSeatNumber(i) {
+            const col = i % state.cols;
+            const row = Math.floor(i / state.cols);
+            return (state.cols - 1 - col) * state.rows + (row + 1);
         }
+
+        function getPartners(i, seatList) {
+            if (!seatList || seatList.length === 0) return [];
+            const col = i % state.cols;
+            const row = Math.floor(i / state.cols);
+            const res = [];
+            if (col > 0) res.push(seatList[row * state.cols + (col - 1)]);
+            if (col < state.cols - 1) res.push(seatList[row * state.cols + (col + 1)]);
+            return res.filter(id => id);
+        }
+
+        // --- 音声 ---
+        let audioCtx = null;
+        function initAudio() { if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} } }
         function playTone(freq, type, duration, startTime = 0, vol = 0.1) {
             if (!audioCtx || !state.isSoundEnabled) return;
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -230,19 +209,12 @@
             } catch(e){}
         }
         function playFlip() { initAudio(); playTone(1000 + Math.random() * 200, 'sine', 0.1, 0, 0.08); }
-        function playDrumroll() {
-            initAudio();
-            if (!audioCtx || !state.isSoundEnabled) return;
-            for (let i = 0; i < 12; i++) { playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15); }
-        }
-        function playTada() {
-            initAudio();
-            if (!audioCtx || !state.isSoundEnabled) return;
-            [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((freq, i) => { playTone(freq, 'triangle', 1.8, i * 0.06, 0.15); });
-        }
+        function playDrumroll() { initAudio(); if (!state.isSoundEnabled) return; for (let i = 0; i < 12; i++) { playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15); } }
+        function playTada() { initAudio(); if (!state.isSoundEnabled) return; [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((freq, i) => { playTone(freq, 'triangle', 1.8, i * 0.06, 0.15); }); }
 
-        // --- ロジック ---
+        // --- メインロジック ---
         function parseStudents(text) {
+            if (!text) return;
             const lines = text.trim().split('\n');
             state.students = lines.map((line, i) => {
                 const parts = line.split(/[,\t]/).map(p => p.trim()).filter(p => p);
@@ -261,74 +233,68 @@
         function initSeats() {
             const newSize = state.rows * state.cols;
             const newSeats = new Array(newSize).fill(null);
-            for (let i = 0; i < Math.min(state.seats.length, newSize); i++) {
-                newSeats[i] = state.seats[i];
-            }
+            for (let i = 0; i < Math.min(state.seats.length, newSize); i++) newSeats[i] = state.seats[i];
             state.seats = newSeats;
-            const resizeObj = (prev) => {
-                const next = {};
-                Object.keys(prev).forEach(key => { if (parseInt(key) < newSize) next[key] = prev[key]; });
-                return next;
-            };
-            state.lockedSeats = resizeObj(state.lockedSeats);
-            state.seatAttributes = resizeObj(state.seatAttributes);
-            saveToLocalStorage(); // 変更があったら自動保存
+            saveToLocalStorage();
             render();
         }
 
-        async function handleUrlImport() {
-            state.importError = '';
-            if (!state.importUrl) return;
-            let csvUrl = state.importUrl;
-            const match = state.importUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-            if (match && match[1]) {
-                csvUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv`;
-            } else {
-                state.importError = '有効なURLではありません。';
-                render();
-                return;
-            }
-            try {
-                const response = await fetch(csvUrl);
-                if (!response.ok) throw new Error('Access denied');
-                const text = await response.text();
-                state.importText = text;
-                parseStudents(text);
-                state.importUrl = '';
-                initSeats(); 
-            } catch (e) {
-                console.error(e);
-                state.importError = '読み込みに失敗しました。公開設定を確認してください。';
-                render();
-            }
-        }
-
         function shuffleSeatsLogic() {
-            let newSeats = [...state.seats];
+            let resultSeats = [...state.seats];
             const lockedIds = new Set();
-            for (let i = 0; i < newSeats.length; i++) {
-                if (state.lockedSeats[i] && newSeats[i]) lockedIds.add(newSeats[i]);
-                else newSeats[i] = null;
+            for (let i = 0; i < resultSeats.length; i++) {
+                if (state.lockedSeats[i] && resultSeats[i]) lockedIds.add(resultSeats[i]);
+                else resultSeats[i] = null;
             }
+
             let pool = state.students.filter(s => !lockedIds.has(s.id));
-            let boys = pool.filter(s => s.gender === 'M').sort(() => Math.random() - 0.5);
-            let girls = pool.filter(s => s.gender === 'F').sort(() => Math.random() - 0.5);
-            
-            for (let i = 0; i < newSeats.length; i++) {
-                if (state.lockedSeats[i]) continue;
-                const attr = state.seatAttributes[i];
-                if (attr === 'M' && boys.length > 0) newSeats[i] = boys.pop().id;
-                else if (attr === 'F' && girls.length > 0) newSeats[i] = girls.pop().id;
-            }
-            let remaining = [...boys, ...girls].sort(() => Math.random() - 0.5);
-            for (let i = 0; i < newSeats.length; i++) {
-                if (!newSeats[i] && state.seatAttributes[i] !== 'EMPTY' && remaining.length > 0) {
-                    newSeats[i] = remaining.pop().id;
+            let attempts = 0;
+            const hasRef = state.referenceSeats && state.referenceSeats.length === state.seats.length;
+
+            while (attempts < 100) {
+                attempts++;
+                let tempSeats = [...resultSeats];
+                let boys = pool.filter(s => s.gender === 'M').sort(() => Math.random() - 0.5);
+                let girls = pool.filter(s => s.gender === 'F').sort(() => Math.random() - 0.5);
+                
+                for (let i = 0; i < tempSeats.length; i++) {
+                    if (state.lockedSeats[i]) continue;
+                    const attr = state.seatAttributes[i];
+                    if (attr === 'M' && boys.length > 0) tempSeats[i] = boys.pop().id;
+                    else if (attr === 'F' && girls.length > 0) tempSeats[i] = girls.pop().id;
                 }
+                let remaining = [...boys, ...girls].sort(() => Math.random() - 0.5);
+                for (let i = 0; i < tempSeats.length; i++) {
+                    if (!tempSeats[i] && state.seatAttributes[i] !== 'EMPTY' && remaining.length > 0) tempSeats[i] = remaining.pop().id;
+                }
+
+                // 回避ロジック
+                if (hasRef) {
+                    let fail = false;
+                    // ロックされていない席のみ、前回との重複をチェックする
+                    if (state.avoidSameSeat) {
+                        for (let i = 0; i < tempSeats.length; i++) {
+                            if (state.lockedSeats[i]) continue; // 固定席は同じでOK
+                            if (tempSeats[i] && tempSeats[i] === state.referenceSeats[i]) { fail = true; break; }
+                        }
+                    }
+                    if (!fail && state.avoidSamePartner) {
+                        for (let i = 0; i < tempSeats.length; i++) {
+                            if (state.lockedSeats[i]) continue; // 固定席のパートナーは不問（またはユーザーが意図的に指定しているため）
+                            const sid = tempSeats[i]; if (!sid) continue;
+                            const currentP = getPartners(i, tempSeats);
+                            const oldP = getPartners(i, state.referenceSeats);
+                            if (currentP.some(p => oldP.includes(p))) { fail = true; break; }
+                        }
+                    }
+                    if (fail && attempts < 100) continue;
+                }
+                resultSeats = tempSeats;
+                break;
             }
-            state.seats = newSeats;
+            state.seats = resultSeats;
             state.revealState = {};
-            saveToLocalStorage(); // シャッフル結果も自動保存
+            saveToLocalStorage();
             render();
         }
 
@@ -345,30 +311,23 @@
             }, 1500);
         }
 
-        // --- ウィンドウ操作 ---
+        // --- ハンドラ登録 ---
         window.setMode = (m) => { state.mode = m; render(); };
         window.toggleSound = () => { state.isSoundEnabled = !state.isSoundEnabled; render(); };
-        window.toggleSaveMenu = () => { state.showSaveMenu = !state.showSaveMenu; render(); };
         window.setActiveTool = (t) => { state.activeTool = t; state.swapSourceIndex = null; render(); };
         window.toggleRoster = () => { state.isRosterOpen = !state.isRosterOpen; render(); };
-        window.updateImportText = (v) => { state.importText = v; };
-        window.runImport = () => { parseStudents(state.importText); initSeats(); };
+        window.runImport = () => { parseStudents(state.importText); state.referenceSeats = [...state.seats]; initSeats(); };
         window.clearRosterText = () => { state.importText = ''; render(); };
-        window.runUrlImport = () => handleUrlImport();
-        window.updateRows = (v) => { state.rows = Math.max(1, parseInt(v) || 1); initSeats(); };
-        window.updateCols = (val) => { state.cols = Math.max(1, parseInt(val) || 1); initSeats(); };
         window.toggleBlackboard = () => { state.blackboardPosition = state.blackboardPosition === 'top' ? 'bottom' : 'top'; saveToLocalStorage(); render(); };
         window.clearSeats = () => { state.seats = state.seats.map((id, i) => state.lockedSeats[i] ? id : null); state.revealState = {}; saveToLocalStorage(); render(); };
         window.toggleSidebar = () => { state.isSidebarCollapsed = !state.isSidebarCollapsed; render(); };
+        window.toggleConstraint = (k) => { state[k] = !state[k]; render(); };
         window.toggleControls = (v) => { state.isStudentControlsVisible = v; render(); };
+        window.toggleSaveMenu = () => { state.showSaveMenu = !state.showSaveMenu; render(); };
 
         window.handleSeatClick = (i) => {
             if (state.activeTool === 'CURSOR') openSeatModal(i);
-            else if (state.activeTool === 'EMPTY') { 
-                state.seatAttributes[i] = state.seatAttributes[i] === 'EMPTY' ? null : 'EMPTY'; 
-                if(state.seatAttributes[i]){state.seats[i]=null; state.lockedSeats[i]=false;} 
-                saveToLocalStorage(); render(); 
-            }
+            else if (state.activeTool === 'EMPTY') { state.seatAttributes[i] = state.seatAttributes[i] === 'EMPTY' ? null : 'EMPTY'; if(state.seatAttributes[i]){state.seats[i]=null; state.lockedSeats[i]=false;} saveToLocalStorage(); render(); }
             else if (state.activeTool === 'M') { state.seatAttributes[i] = state.seatAttributes[i] === 'M' ? null : 'M'; state.lockedSeats[i]=false; saveToLocalStorage(); render(); }
             else if (state.activeTool === 'F') { state.seatAttributes[i] = state.seatAttributes[i] === 'F' ? null : 'F'; state.lockedSeats[i]=false; saveToLocalStorage(); render(); }
             else if (state.activeTool === 'SWAP') {
@@ -378,8 +337,7 @@
                     state.seats[state.swapSourceIndex] = state.seats[i];
                     state.seats[i] = temp;
                     state.swapSourceIndex = null;
-                    saveToLocalStorage();
-                    render();
+                    saveToLocalStorage(); render();
                 }
             }
         };
@@ -407,21 +365,17 @@
             closeModal(); saveToLocalStorage(); render();
         };
 
-        // --- 保存処理 (画像/PDF) ---
         window.prepareAndCapture = async (type) => {
             state.showSaveMenu = false; render();
             const el = document.getElementById('capture-container');
             if (!el) return;
             try {
-                const dynamicWidth = Math.max(1400, state.cols * 150 + 200);
-                const dynamicHeight = Math.max(1000, state.rows * 120 + 200);
-
                 const canvas = await html2canvas(el, {
                     scale: 3, backgroundColor: '#ffffff', useCORS: true,
                     onclone: (cloned) => {
                         const target = cloned.getElementById('capture-container');
                         if (target) {
-                            target.style.width = `${dynamicWidth}px`; target.style.height = 'auto'; target.style.padding = '60px';
+                            target.style.width = '1400px'; target.style.padding = '60px';
                             const grid = target.querySelector('.seat-grid');
                             if (grid) {
                                 grid.style.display = 'grid';
@@ -433,37 +387,24 @@
                             cells.forEach(cell => {
                                 cell.style.height = '100px';
                                 const nameDiv = cell.querySelector('.student-name');
-                                if (nameDiv) {
-                                    nameDiv.style.fontSize = '26px';
-                                    nameDiv.style.lineHeight = '1.4'; 
-                                    nameDiv.style.overflow = 'visible';
-                                    nameDiv.classList.remove('line-clamp-2');
-                                }
+                                if (nameDiv) { nameDiv.style.fontSize = '26px'; nameDiv.style.lineHeight = '1.4'; nameDiv.classList.remove('line-clamp-2'); }
                             });
                         }
                     }
                 });
                 if (type === 'png') {
                     canvas.toBlob(async (blob) => {
-                        if (!blob) return;
                         const file = new File([blob], "座席表.png", { type: "image/png" });
-                        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                            try { await navigator.share({ files: [file], title: '座席表' }); return; } catch (e) {}
-                        }
+                        if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: '座席表' }); return; } catch (e) {} }
                         const a = document.createElement('a'); a.download = "座席表.png"; a.href = canvas.toDataURL(); a.click();
                     });
                 } else {
                     const imgData = canvas.toDataURL('image/png');
                     const pdf = new jspdf.jsPDF({ orientation: 'landscape', format: 'a4' });
-                    const pdfW = pdf.internal.pageSize.getWidth();
-                    const pdfH = pdf.internal.pageSize.getHeight();
-                    const imgRatio = canvas.height / canvas.width;
-                    const displayW = pdfW - 20;
-                    const displayH = displayW * imgRatio;
-                    pdf.addImage(imgData, 'PNG', 10, 10, displayW, displayH);
+                    pdf.addImage(imgData, 'PNG', 10, 10, pdf.internal.pageSize.getWidth()-20, 0);
                     pdf.save('座席表.pdf');
                 }
-            } catch (e) { alert("保存中にエラーが発生しました。"); }
+            } catch (e) { alert("エラーが発生しました。"); }
         };
 
         function getStudent(id) { return state.students.find(s => s.id === id); }
@@ -505,16 +446,13 @@
                                 ${state.showSaveMenu ? `<div class="absolute top-full left-0 w-full bg-white border shadow-lg rounded z-50 py-1"><button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">画像</button><button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">PDF</button></div>` : ''}
                             </div>
                         </div>
-
-                        <!-- データの保存・読込セクション -->
                         <section class="bg-green-50 p-2 rounded border border-green-100 mt-4">
                             <h2 class="font-bold text-[10px] text-green-600 mb-2 uppercase">設定データの管理</h2>
                             <div class="flex gap-1">
-                                <button onclick="exportDataToFile()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] hover:bg-green-100 flex items-center justify-center gap-1"><i data-lucide="save" class="w-3 h-3"></i> 保存</button>
-                                <button onclick="triggerFilePicker()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] hover:bg-green-100 flex items-center justify-center gap-1"><i data-lucide="folder-open" class="w-3 h-3"></i> 読込</button>
+                                <button onclick="exportDataToFile()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] flex items-center justify-center gap-1"><i data-lucide="save" class="w-3 h-3"></i> 保存</button>
+                                <button onclick="triggerFilePicker()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] flex items-center justify-center gap-1"><i data-lucide="folder-open" class="w-3 h-3"></i> 読込</button>
                             </div>
                         </section>
-
                         <section class="bg-indigo-50 p-2 rounded border border-indigo-100 mt-4">
                             <h2 class="font-bold text-[10px] text-indigo-400 mb-2 uppercase">一括設定</h2>
                             <div class="grid grid-cols-2 gap-1">
@@ -526,36 +464,28 @@
                             <button onclick="setActiveTool('SWAP')" class="w-full mt-1 p-1 rounded text-[10px] border ${state.activeTool==='SWAP'?'bg-orange-500 text-white':'text-indigo-400'}">席の入れ替え</button>
                         </section>
                         <section class="border rounded p-2 text-[11px] mt-4">
-                            <div class="flex justify-between items-center cursor-pointer" onclick="toggleRoster()"><span class="font-bold text-gray-500">名簿読み込み・編集</span><i data-lucide="${state.isRosterOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i></div>
-                            ${state.isRosterOpen ? `
-                                <div class="mt-2 space-y-1">
-                                    <div class="flex gap-1">
-                                        <input type="text" oninput="state.importUrl = this.value" placeholder="Spreadsheet URL" class="flex-1 p-1 border rounded text-[9px]">
-                                        <button onclick="runUrlImport()" class="bg-green-600 text-white p-1 rounded"><i data-lucide="link" class="w-3 h-3"></i></button>
-                                    </div>
-                                    ${state.importError ? `<p class="text-[8px] text-red-500">${state.importError}</p>` : ''}
-                                    <textarea oninput="updateImportText(this.value)" class="w-full h-32 p-1 border rounded text-[10px] font-mono no-scrollbar">${state.importText}</textarea>
-                                    <div class="flex gap-1">
-                                        <button onclick="runImport()" class="flex-1 bg-gray-100 py-1 rounded font-bold text-[10px]">更新</button>
-                                        <button onclick="clearRosterText()" class="flex-1 bg-red-50 text-red-600 py-1 rounded font-bold text-[10px] border border-red-100">クリア</button>
-                                    </div>
-                                </div>` : ''}
+                            <div class="flex justify-between items-center cursor-pointer" onclick="toggleRoster()"><span class="font-bold text-gray-500">名簿編集</span><i data-lucide="${state.isRosterOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i></div>
+                            ${state.isRosterOpen ? `<textarea oninput="updateImportText(this.value)" class="w-full h-32 mt-2 p-1 border rounded text-[10px] font-mono no-scrollbar">${state.importText}</textarea><div class="flex gap-1 mt-1"><button onclick="runImport()" class="flex-1 bg-gray-100 py-1 rounded font-bold text-[10px]">更新</button><button onclick="clearRosterText()" class="flex-1 bg-red-50 text-red-600 py-1 rounded font-bold text-[10px] border border-red-100">クリア</button></div>` : ''}
                         </section>
                         <div class="text-[11px] space-y-2 mt-4">
                             <div class="flex items-center justify-between">横幅 <div class="flex items-center gap-2"><button onclick="updateCols(${state.cols-1})" class="bg-gray-100 w-6 rounded">-</button><span>${state.cols}</span><button onclick="updateCols(${state.cols+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
                             <div class="flex items-center justify-between">縦幅 <div class="flex items-center gap-2"><button onclick="updateRows(${state.rows-1})" class="bg-gray-100 w-6 rounded">-</button><span>${state.rows}</span><button onclick="updateRows(${state.rows+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
                             <button onclick="toggleBlackboard()" class="w-full bg-white border py-1 rounded text-gray-500 mt-2 text-[10px]">黒板の上下を切り替え</button>
+                            <div class="mt-4 p-2 bg-gray-50 border rounded space-y-2">
+                                <label class="flex items-center gap-2 text-[10px] cursor-pointer"><input type="checkbox" ${state.avoidSameSeat?'checked':''} onchange="toggleConstraint('avoidSameSeat')"> 前回と同じ席を避ける</label>
+                                <label class="flex items-center gap-2 text-[10px] cursor-pointer"><input type="checkbox" ${state.avoidSamePartner?'checked':''} onchange="toggleConstraint('avoidSamePartner')"> 前回と同じパートナーを避ける</label>
+                            </div>
                         </div>
                     </div>
                 </aside>`;
 
-            let gridCells = '';
+            let cellsHtml = '';
             displayIndices.forEach(i => {
                 const sId = state.seats[i];
                 const student = getStudent(sId);
+                const attr = state.seatAttributes[i];
                 const isLocked = state.lockedSeats[i];
                 const isSwapping = state.activeTool === 'SWAP' && state.swapSourceIndex === i;
-                const attr = state.seatAttributes[i];
 
                 let bgColor = 'bg-gray-50', ring = isSwapping ? 'ring-4 ring-orange-400 z-10' : '';
                 if (student) bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
@@ -564,30 +494,27 @@
                 else if (attr === 'F') bgColor = 'bg-pink-50 border-dashed border-pink-300';
                 else if (isLocked) bgColor = 'bg-white border-red-200';
 
-                let animStyle = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*40}px, ${(Math.random()-0.5)*40}px) rotate(${(Math.random()-0.5)*20}deg);` : '';
+                let animStyle = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*40}px, ${(Math.random()-0.5)*40}px) rotate(${(Math.random()-0.5)*20}deg); transition: transform 0.2s;` : '';
 
-                gridCells += `
-                <div onclick="handleSeatClick(${i})" class="seat-cell rounded border border-gray-300 flex flex-col items-center justify-center relative ${bgColor} ${ring} overflow-hidden" style="width: 120px; height: 60px; ${animStyle}">
-                    ${student ? `<span class="text-[12px] font-bold text-gray-400 absolute top-0.5 left-1">${student.number}</span><div class="student-name text-[13px] font-bold text-gray-800 line-clamp-2 text-center px-1">${student.name}</div>` : `<span class="text-gray-300 font-bold text-xs">${attr==='EMPTY'?'×':i+1}</span>`}
+                cellsHtml += `
+                <div onclick="handleSeatClick(${i})" class="rounded border border-gray-300 flex flex-col items-center justify-center relative ${bgColor} ${ring} overflow-hidden" style="width: 120px; height: 60px; ${animStyle}">
+                    ${student ? `<span class="text-[12px] font-bold text-gray-400 absolute top-0.5 left-1">${student.number}</span><div class="student-name text-[13px] font-bold text-gray-800 line-clamp-2 text-center px-1">${student.name}</div>` : `<span class="text-gray-300 font-bold text-xs">${attr==='EMPTY'?'×':getVisualSeatNumber(i)}</span>`}
                     <div class="absolute top-0.5 right-1">${!student && isLocked ? '<i data-lucide="lock" class="w-2 h-2 text-red-400"></i>' : ''}</div>
                 </div>`;
             });
 
-            const seatGridHtml = `<div class="seat-grid grid gap-1 p-2 bg-white rounded-lg shadow-inner" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${gridCells}</div>`;
+            const gridHtml = `<div class="seat-grid grid gap-1 p-2 bg-white rounded-lg shadow-inner" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${cellsHtml}</div>`;
 
             container.innerHTML = `
                 ${header}
                 <div class="flex flex-1 overflow-hidden">
                     ${sidebar}
-                    <main class="flex-1 overflow-auto flex flex-col items-center p-4 bg-gray-100 no-scrollbar pb-[100px] pt-4">
+                    <main class="flex-1 overflow-auto flex flex-col items-center p-4 pt-0 bg-gray-100 no-scrollbar pb-[100px]">
                         <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-2 rounded-xl">
-                            ${state.blackboardPosition === 'top' ? renderBlackboard('top') : ''}
-                            ${seatGridHtml}
-                            ${state.blackboardPosition === 'bottom' ? renderBlackboard('bottom') : ''}
+                            ${state.blackboardPosition === 'top' ? renderBlackboard('top') + gridHtml : gridHtml + renderBlackboard('bottom')}
                         </div>
                     </main>
-                </div>
-                ${state.showSaveMenu ? `<div class="fixed inset-0 z-40" onclick="toggleSaveMenu()"></div>` : ''}`;
+                </div>`;
         }
 
         function renderStudent(container) {
@@ -604,31 +531,22 @@
                         <div class="w-px h-8 bg-white/20 mx-2"></div>
                         <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling?'disabled':''} class="bg-indigo-500 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 text-sm"><i data-lucide="shuffle" class="w-4 h-4"></i> 席替え</button>
                         <button onclick="drumRollReveal()" ${state.isShuffling?'disabled':''} class="bg-yellow-500 text-black px-6 py-2 rounded-xl font-bold text-sm">公開</button>
-                        <button onclick="revealAll()" ${state.isShuffling?'disabled':''} class="bg-green-500 text-white px-8 py-2 rounded-xl font-bold text-sm">一斉</button>
+                        <button onclick="revealAll()" ${state.isShuffling?'disabled':''} class="bg-green-50 text-white px-8 py-2 rounded-xl font-bold text-sm">一斉</button>
                         <button onclick="toggleControls(false)" class="p-2 bg-white/10 text-white rounded-full"><i data-lucide="x"></i></button>
                     </div>
                 </div>
                 ${!state.isStudentControlsVisible ? `<button onclick="toggleControls(true)" class="fixed bottom-6 right-6 bg-indigo-500 text-white p-4 rounded-full shadow-2xl z-50"><i data-lucide="chevron-up"></i></button>` : ''}`;
 
-            let gridCells = '';
+            let cellsHtml = '';
             displayIndices.forEach(i => {
-                const sId = state.seats[i];
-                const student = getStudent(sId);
-                const isRev = state.revealState[i];
-                const attr = state.seatAttributes[i];
-
-                if (!student && (attr === 'EMPTY' || !sId)) {
-                    gridCells += `<div class="rounded border border-white/5 bg-black/10 flex items-center justify-center opacity-30" style="width: 120px; height: 60px;">×</div>`;
-                    return;
-                }
-
+                const sId = state.seats[i], student = getStudent(sId), isRev = state.revealState[i], attr = state.seatAttributes[i];
+                if (!student && (attr === 'EMPTY' || !sId)) { cellsHtml += `<div class="rounded border border-white/5 bg-black/10 flex items-center justify-center opacity-30" style="width: 120px; height: 60px;">×</div>`; return; }
                 let anim = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*400}px, ${(Math.random()-0.5)*400}px) rotate(${(Math.random()-0.5)*360}deg); opacity: 0.5;` : '';
-
-                gridCells += `
+                cellsHtml += `
                 <div onclick="studentToggleCard(${i})" class="perspective-1000 cursor-pointer" style="width: 120px; height: 60px; ${anim}">
                     <div class="relative w-full h-full transform-style-3d transition-transform duration-500 ${isRev?'rotate-y-180':''}" style="transform: ${isRev?'rotateY(180deg)':'rotateY(0deg)'};">
                         <div class="absolute inset-0 backface-hidden bg-[#f3efe4] rounded-lg shadow-md border-b-4 border-r-4 border-gray-300 flex flex-col items-center justify-center text-gray-400">
-                            <span class="text-[10px] font-bold">NO.</span><span class="text-xl font-bold">${student?.number || '-'}</span>
+                            <span class="text-[10px] font-bold">NO.</span><span class="text-xl font-bold">${student?.number || getVisualSeatNumber(i)}</span>
                         </div>
                         <div class="absolute inset-0 backface-hidden rotate-y-180 rounded-lg shadow-md border-b-4 border-r-4 ${student?.gender==='M'?'bg-blue-100':'bg-pink-100'} flex items-center justify-center text-gray-800" style="transform: rotateY(180deg); backface-visibility: hidden;">
                             ${student ? `<span class="absolute top-1 left-2 text-[10px] font-bold opacity-30">${student.number}</span><div class="text-[13px] font-bold text-center px-1">${student.name}</div>` : ''}
@@ -637,21 +555,13 @@
                 </div>`;
             });
 
-            // グリッドをflexコンテナでラップしてスクロールを安定させる
-            const gridHtml = `
-                <div class="flex flex-col items-center justify-center min-h-full py-10 w-full">
-                    ${state.blackboardPosition === 'top' ? renderBlackboard('top') : ''}
-                    <div class="seat-grid grid gap-2 p-4 justify-center content-center flex-shrink-0" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">
-                        ${gridCells}
-                    </div>
-                    ${state.blackboardPosition === 'bottom' ? renderBlackboard('bottom') : ''}
-                </div>`;
+            const gridHtml = `<div class="seat-grid grid gap-2 p-4 justify-center content-start flex-shrink-0" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${cellsHtml}</div>`;
 
             container.innerHTML = `
                 <div class="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans p-4">
                     <div class="absolute inset-0 opacity-5" style="background-image: radial-gradient(circle, #ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
-                    <div class="flex-1 w-full flex flex-col items-center z-10 overflow-auto no-scrollbar pb-[120px]">
-                        ${gridHtml}
+                    <div class="flex-1 w-full flex flex-col items-center justify-start z-10 overflow-y-auto no-scrollbar pb-[120px]">
+                        ${state.blackboardPosition === 'top' ? renderBlackboard('top') + gridHtml : gridHtml + renderBlackboard('bottom')}
                     </div>
                     ${controls}
                 </div>`;
@@ -660,30 +570,23 @@
         function renderModal() {
             const content = document.getElementById('modal-content');
             if (!content || state.editingSeatIndex === null) return;
-            const i = state.editingSeatIndex, sId = state.seats[i], attr = state.seatAttributes[i];
-            const placed = new Set(state.seats.filter(id => id !== null && id !== sId));
+            const i = state.editingSeatIndex, attr = state.seatAttributes[i];
+            const placed = new Set(state.seats.filter(id => id !== null && id !== state.seats[i]));
             const filtered = state.students.filter(s => !placed.has(s.id) && (s.name || '').includes(state.searchQuery));
             let listHtml = filtered.map(s => `
                 <button onclick="editSeat('SET_STUDENT', '${s.id}')" class="w-full p-3 text-left flex justify-between items-center hover:bg-indigo-50 border-b text-sm">
                     <div class="flex items-center gap-3"><span class="text-gray-400 w-6">${s.number}</span><span class="font-bold">${s.name}</span></div>
                     <span class="px-2 py-0.5 rounded text-[10px] font-bold ${s.gender==='M'?'bg-blue-100 text-blue-600':'bg-pink-100 text-pink-600'}">${s.gender==='M'?'男':'女'}</span>
                 </button>`).join('');
-
-            content.innerHTML = `
-                <div class="p-4 border-b bg-gray-50 flex justify-between items-center font-bold">座席 No.${i + 1} の設定<button onclick="closeModal()"><i data-lucide="x"></i></button></div>
+            content.innerHTML = `<div class="p-4 border-b bg-gray-50 flex justify-between items-center font-bold font-sans text-gray-700">座席 No.${getVisualSeatNumber(i)} の設定<button onclick="closeModal()"><i data-lucide="x"></i></button></div>
                 <div class="p-4 space-y-4 overflow-y-auto no-scrollbar">
-                    <div class="grid grid-cols-2 gap-2">
-                        <button onclick="editSeat('SET_ATTRIBUTE', 'EMPTY')" class="p-3 border rounded-xl text-xs font-bold ${attr==='EMPTY'?'bg-gray-800 text-white':'bg-white'}">空席にする</button>
-                        <button onclick="editSeat('SET_ATTRIBUTE', null)" class="p-3 border rounded-xl text-xs font-bold ${!attr && !state.lockedSeats[i]?'bg-indigo-600 text-white':'bg-white'}">指定なし</button>
-                    </div>
-                    <input type="text" placeholder="名前検索..." class="w-full p-3 border rounded-xl text-sm" value="${state.searchQuery}" oninput="updateSearchQuery(this.value)">
-                    <div class="max-h-60 overflow-y-auto border rounded-xl divide-y no-scrollbar">${listHtml}</div>
-                </div>`;
+                    <div class="grid grid-cols-2 gap-2"><button onclick="editSeat('SET_ATTRIBUTE', 'EMPTY')" class="p-3 border rounded-xl text-xs font-bold ${attr==='EMPTY'?'bg-gray-800 text-white':'bg-white'}">空席にする</button><button onclick="editSeat('SET_ATTRIBUTE', null)" class="p-3 border rounded-xl text-xs font-bold ${!attr && !state.lockedSeats[i]?'bg-indigo-600 text-white':'bg-white'}">指定なし</button></div>
+                    <input type="text" placeholder="名前検索..." class="w-full p-3 border rounded-xl text-sm" value="${state.searchQuery}" oninput="updateSearchQuery(this.value)"><div class="max-h-60 overflow-y-auto border rounded-xl divide-y no-scrollbar">${listHtml}</div></div>`;
             lucide.createIcons();
         }
 
         window.onload = () => { 
-            loadFromLocalStorage(); // 最初に保存データを復元
+            loadFromLocalStorage(); 
             parseStudents(state.importText); 
             initSeats(); 
         };
