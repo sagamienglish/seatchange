@@ -144,6 +144,31 @@
             }
         }
 
+        // --- 3. 動作に必要な不足関数の定義 ---
+        window.updateRows = (val) => {
+            if (val < 1) return;
+            state.rows = val;
+            initSeats();
+        };
+
+        window.updateCols = (val) => {
+            if (val < 1) return;
+            state.cols = val;
+            initSeats();
+        };
+
+        window.updateImportText = (val) => {
+            state.importText = val;
+            saveToLocalStorage();
+        };
+
+        window.setAsReference = () => {
+            state.referenceSeats = [...state.seats];
+            saveToLocalStorage();
+            alert("現在の席を記録しました。");
+            render();
+        };
+
         window.exportDataToFile = () => {
             const data = { ...state, students: undefined, revealState: {} };
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -162,11 +187,10 @@
             reader.onload = (e) => {
                 try {
                     const parsed = JSON.parse(e.target.result);
-                    state.referenceSeats = [...(parsed.seats || [])];
                     Object.assign(state, parsed);
                     parseStudents(state.importText);
                     initSeats();
-                    alert("読込完了：この配置を「前回」として固定席以外を避ける機能が有効になります。");
+                    alert("読込完了");
                 } catch (err) { alert("形式が違います。"); }
             };
             reader.readAsText(file);
@@ -268,19 +292,17 @@
                     if (!tempSeats[i] && state.seatAttributes[i] !== 'EMPTY' && remaining.length > 0) tempSeats[i] = remaining.pop().id;
                 }
 
-                // 回避ロジック
                 if (hasRef) {
                     let fail = false;
-                    // ロックされていない席のみ、前回との重複をチェックする
                     if (state.avoidSameSeat) {
                         for (let i = 0; i < tempSeats.length; i++) {
-                            if (state.lockedSeats[i]) continue; // 固定席は同じでOK
+                            if (state.lockedSeats[i]) continue;
                             if (tempSeats[i] && tempSeats[i] === state.referenceSeats[i]) { fail = true; break; }
                         }
                     }
                     if (!fail && state.avoidSamePartner) {
                         for (let i = 0; i < tempSeats.length; i++) {
-                            if (state.lockedSeats[i]) continue; // 固定席のパートナーは不問（またはユーザーが意図的に指定しているため）
+                            if (state.lockedSeats[i]) continue;
                             const sid = tempSeats[i]; if (!sid) continue;
                             const currentP = getPartners(i, tempSeats);
                             const oldP = getPartners(i, state.referenceSeats);
@@ -316,7 +338,7 @@
         window.toggleSound = () => { state.isSoundEnabled = !state.isSoundEnabled; render(); };
         window.setActiveTool = (t) => { state.activeTool = t; state.swapSourceIndex = null; render(); };
         window.toggleRoster = () => { state.isRosterOpen = !state.isRosterOpen; render(); };
-        window.runImport = () => { parseStudents(state.importText); state.referenceSeats = [...state.seats]; initSeats(); };
+        window.runImport = () => { parseStudents(state.importText); initSeats(); };
         window.clearRosterText = () => { state.importText = ''; render(); };
         window.toggleBlackboard = () => { state.blackboardPosition = state.blackboardPosition === 'top' ? 'bottom' : 'top'; saveToLocalStorage(); render(); };
         window.clearSeats = () => { state.seats = state.seats.map((id, i) => state.lockedSeats[i] ? id : null); state.revealState = {}; saveToLocalStorage(); render(); };
@@ -331,8 +353,10 @@
             else if (state.activeTool === 'M') { state.seatAttributes[i] = state.seatAttributes[i] === 'M' ? null : 'M'; state.lockedSeats[i]=false; saveToLocalStorage(); render(); }
             else if (state.activeTool === 'F') { state.seatAttributes[i] = state.seatAttributes[i] === 'F' ? null : 'F'; state.lockedSeats[i]=false; saveToLocalStorage(); render(); }
             else if (state.activeTool === 'SWAP') {
-                if (state.swapSourceIndex === null) state.swapSourceIndex = i;
-                else {
+                if (state.swapSourceIndex === null) {
+                    state.swapSourceIndex = i;
+                    render(); // ハイライトのために再描写
+                } else {
                     const temp = state.seats[state.swapSourceIndex];
                     state.seats[state.swapSourceIndex] = state.seats[i];
                     state.seats[i] = temp;
@@ -380,22 +404,29 @@
                             if (grid) {
                                 grid.style.display = 'grid';
                                 grid.style.gridTemplateColumns = `repeat(${state.cols}, 120px)`;
-                                grid.style.gridTemplateRows = `repeat(${state.rows}, 100px)`; 
+                                grid.style.gridTemplateRows = `repeat(${state.rows}, auto)`; 
                                 grid.style.gap = '15px';
                             }
                             const cells = target.querySelectorAll('.seat-cell');
                             cells.forEach(cell => {
                                 cell.style.height = '100px';
+                                cell.style.display = 'flex';
+                                cell.style.flexDirection = 'column';
+                                cell.style.alignItems = 'center';
+                                cell.style.justifyContent = 'center';
                                 const nameDiv = cell.querySelector('.student-name');
-                                if (nameDiv) { nameDiv.style.fontSize = '26px'; nameDiv.style.lineHeight = '1.4'; nameDiv.classList.remove('line-clamp-2'); }
+                                if (nameDiv) { 
+                                    nameDiv.style.fontSize = '24px'; 
+                                    nameDiv.style.lineHeight = '1.2'; 
+                                    nameDiv.classList.remove('line-clamp-2'); 
+                                    nameDiv.style.padding = '0 5px';
+                                }
                             });
                         }
                     }
                 });
                 if (type === 'png') {
                     canvas.toBlob(async (blob) => {
-                        const file = new File([blob], "座席表.png", { type: "image/png" });
-                        if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: '座席表' }); return; } catch (e) {} }
                         const a = document.createElement('a'); a.download = "座席表.png"; a.href = canvas.toDataURL(); a.click();
                     });
                 } else {
@@ -440,9 +471,9 @@
                     <button onclick="clearSeats()" class="bg-red-50 text-red-600 p-2 rounded font-bold text-xs border border-red-100 flex items-center justify-center gap-2"><i data-lucide="eraser" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'クリア'}</button>
                     <div class="${state.isSidebarCollapsed?'hidden':''}">
                         <div class="flex gap-1">
-                            <button onclick="window.print()" class="flex-1 bg-gray-100 p-2 rounded text-[10px] font-bold">印刷</button>
+                            <button onclick="window.print()" class="flex-1 bg-gray-100 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1"><i data-lucide="printer" class="w-3 h-3"></i>印刷</button>
                             <div class="relative flex-1">
-                                <button onclick="toggleSaveMenu()" class="w-full bg-gray-100 p-2 rounded text-[10px] font-bold">保存</button>
+                                <button onclick="toggleSaveMenu()" class="w-full bg-gray-100 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1"><i data-lucide="download" class="w-3 h-3"></i>保存</button>
                                 ${state.showSaveMenu ? `<div class="absolute top-full left-0 w-full bg-white border shadow-lg rounded z-50 py-1"><button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">画像</button><button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">PDF</button></div>` : ''}
                             </div>
                         </div>
@@ -452,6 +483,7 @@
                                 <button onclick="exportDataToFile()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] flex items-center justify-center gap-1"><i data-lucide="save" class="w-3 h-3"></i> 保存</button>
                                 <button onclick="triggerFilePicker()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] flex items-center justify-center gap-1"><i data-lucide="folder-open" class="w-3 h-3"></i> 読込</button>
                             </div>
+                            <button onclick="setAsReference()" class="w-full mt-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px]">現在を前回として記録</button>
                         </section>
                         <section class="bg-indigo-50 p-2 rounded border border-indigo-100 mt-4">
                             <h2 class="font-bold text-[10px] text-indigo-400 mb-2 uppercase">一括設定</h2>
@@ -487,7 +519,10 @@
                 const isLocked = state.lockedSeats[i];
                 const isSwapping = state.activeTool === 'SWAP' && state.swapSourceIndex === i;
 
-                let bgColor = 'bg-gray-50', ring = isSwapping ? 'ring-4 ring-orange-400 z-10' : '';
+                let bgColor = 'bg-gray-50';
+                // 入れ替え中のハイライト設定（細いオレンジの枠線）
+                let ring = isSwapping ? 'border-2 border-orange-400 z-10' : 'border-gray-300';
+                
                 if (student) bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
                 else if (attr === 'EMPTY') bgColor = 'bg-gray-200';
                 else if (attr === 'M') bgColor = 'bg-blue-50 border-dashed border-blue-300';
@@ -497,7 +532,7 @@
                 let animStyle = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*40}px, ${(Math.random()-0.5)*40}px) rotate(${(Math.random()-0.5)*20}deg); transition: transform 0.2s;` : '';
 
                 cellsHtml += `
-                <div onclick="handleSeatClick(${i})" class="rounded border border-gray-300 flex flex-col items-center justify-center relative ${bgColor} ${ring} overflow-hidden" style="width: 120px; height: 60px; ${animStyle}">
+                <div onclick="handleSeatClick(${i})" class="seat-cell rounded border flex flex-col items-center justify-center relative ${bgColor} ${ring} overflow-hidden" style="width: 120px; height: 60px; ${animStyle}">
                     ${student ? `<span class="text-[12px] font-bold text-gray-400 absolute top-0.5 left-1">${student.number}</span><div class="student-name text-[13px] font-bold text-gray-800 line-clamp-2 text-center px-1">${student.name}</div>` : `<span class="text-gray-300 font-bold text-xs">${attr==='EMPTY'?'×':getVisualSeatNumber(i)}</span>`}
                     <div class="absolute top-0.5 right-1">${!student && isLocked ? '<i data-lucide="lock" class="w-2 h-2 text-red-400"></i>' : ''}</div>
                 </div>`;
@@ -531,7 +566,7 @@
                         <div class="w-px h-8 bg-white/20 mx-2"></div>
                         <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling?'disabled':''} class="bg-indigo-500 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 text-sm"><i data-lucide="shuffle" class="w-4 h-4"></i> 席替え</button>
                         <button onclick="drumRollReveal()" ${state.isShuffling?'disabled':''} class="bg-yellow-500 text-black px-6 py-2 rounded-xl font-bold text-sm">公開</button>
-                        <button onclick="revealAll()" ${state.isShuffling?'disabled':''} class="bg-green-50 text-white px-8 py-2 rounded-xl font-bold text-sm">一斉</button>
+                        <button onclick="revealAll()" ${state.isShuffling?'disabled':''} class="bg-green-500 text-white px-8 py-2 rounded-xl font-bold text-sm">一斉</button>
                         <button onclick="toggleControls(false)" class="p-2 bg-white/10 text-white rounded-full"><i data-lucide="x"></i></button>
                     </div>
                 </div>
