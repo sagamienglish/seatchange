@@ -29,15 +29,51 @@
             .print\:hidden { display: none !important; }
             body { -webkit-print-color-adjust: exact; }
         }
+
+        /* 席の入れ替えアニメーション用 */
+        .seat-transition {
+            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 50;
+        }
+
+        /* クラッカーの紙吹雪用 */
+        .confetti {
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            pointer-events: none;
+            z-index: 100;
+            border-radius: 2px;
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans h-screen overflow-hidden flex flex-col">
 
     <div id="app" class="h-full w-full flex flex-col overflow-hidden"></div>
 
-    <!-- モーダル -->
+    <!-- モーダル（設定用） -->
     <div id="modal-overlay" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 hidden" onclick="closeModal()">
         <div id="modal-content" class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]" onclick="event.stopPropagation()"></div>
+    </div>
+
+    <!-- 保存用プレビューモーダル（iPad/iOS対応） -->
+    <div id="save-preview-overlay" class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 hidden" onclick="closeSavePreview()">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="font-bold text-gray-700">保存プレビュー</h3>
+                <button onclick="closeSavePreview()" class="p-1 hover:bg-gray-100 rounded-full"><i data-lucide="x"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto flex flex-col items-center gap-4">
+                <p class="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg w-full text-center">
+                    <i data-lucide="info" class="inline-block w-4 h-4 mr-1"></i>
+                    iPad/iPhoneの方は、画像を<strong>長押し</strong>して「"写真"に追加」または「保存」を選択してください。
+                </p>
+                <img id="save-preview-img" class="max-w-full shadow-lg border rounded" src="" alt="座席表プレビュー">
+                <button id="direct-download-btn" class="bg-indigo-600 text-white px-6 py-2 rounded-full font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                    <i data-lucide="download" class="w-5 h-5"></i> PCで直接保存
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- 非表示のファイル入力（読み込み用） -->
@@ -101,7 +137,7 @@
             rows: 8,
             cols: 6,
             seats: [], 
-            referenceSeats: [], // 比較用の基準
+            referenceSeats: [], 
             lockedSeats: {}, 
             seatAttributes: {}, 
             importText: INITIAL_STUDENTS_TEXT,
@@ -114,11 +150,14 @@
             searchQuery: '',
             showSaveMenu: false,
             isRosterOpen: true, 
+            isDataManagerOpen: false,
+            isBulkToolOpen: true,
             isSoundEnabled: true,
             isStudentControlsVisible: true,
             isSidebarCollapsed: false,
             avoidSameSeat: false,
-            avoidSamePartner: false
+            avoidSamePartner: false,
+            animatingSwap: null 
         };
 
         // --- 保存・読込 ---
@@ -128,7 +167,10 @@
                     rows: state.rows, cols: state.cols, seats: state.seats,
                     lockedSeats: state.lockedSeats, seatAttributes: state.seatAttributes,
                     importText: state.importText, blackboardPosition: state.blackboardPosition,
-                    referenceSeats: state.referenceSeats
+                    referenceSeats: state.referenceSeats,
+                    isDataManagerOpen: state.isDataManagerOpen,
+                    isBulkToolOpen: state.isBulkToolOpen,
+                    isRosterOpen: state.isRosterOpen
                 };
                 localStorage.setItem('sekigae_kun_data_v3', JSON.stringify(dataToSave));
             } catch (e) {}
@@ -144,7 +186,7 @@
             }
         }
 
-        // --- 3. 動作に必要な不足関数の定義 ---
+        // --- 動作に必要な関数の定義 ---
         window.updateRows = (val) => {
             if (val < 1) return;
             state.rows = val;
@@ -196,6 +238,31 @@
             reader.readAsText(file);
             event.target.value = '';
         };
+
+        // --- クラッカーアニメーション ---
+        function createConfetti() {
+            const colors = ['#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39', '#ffeb3b', '#ffc107', '#ff9800', '#ff5722'];
+            for (let i = 0; i < 100; i++) {
+                const confetti = document.createElement('div');
+                confetti.className = 'confetti';
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confetti.style.left = Math.random() * 100 + 'vw';
+                confetti.style.top = '-10px';
+                confetti.style.transform = `rotate(${Math.random() * 360}deg)`;
+                document.body.appendChild(confetti);
+
+                const animation = confetti.animate([
+                    { transform: `translate3d(0, 0, 0) rotate(0deg)`, opacity: 1 },
+                    { transform: `translate3d(${(Math.random() - 0.5) * 200}px, 100vh, 0) rotate(${Math.random() * 360}deg)`, opacity: 0 }
+                ], {
+                    duration: 2000 + Math.random() * 3000,
+                    easing: 'cubic-bezier(0, .9, .57, 1)',
+                    delay: Math.random() * 500
+                });
+
+                animation.onfinish = () => confetti.remove();
+            }
+        }
 
         // --- 計算ロジック ---
         function getVisualSeatNumber(i) {
@@ -329,6 +396,7 @@
                 shuffleSeatsLogic();
                 state.isShuffling = false;
                 playTada();
+                createConfetti(); 
                 render();
             }, 1500);
         }
@@ -337,7 +405,9 @@
         window.setMode = (m) => { state.mode = m; render(); };
         window.toggleSound = () => { state.isSoundEnabled = !state.isSoundEnabled; render(); };
         window.setActiveTool = (t) => { state.activeTool = t; state.swapSourceIndex = null; render(); };
-        window.toggleRoster = () => { state.isRosterOpen = !state.isRosterOpen; render(); };
+        window.toggleRoster = () => { state.isRosterOpen = !state.isRosterOpen; saveToLocalStorage(); render(); };
+        window.toggleDataManager = () => { state.isDataManagerOpen = !state.isDataManagerOpen; saveToLocalStorage(); render(); };
+        window.toggleBulkTool = () => { state.isBulkToolOpen = !state.isBulkToolOpen; saveToLocalStorage(); render(); };
         window.runImport = () => { parseStudents(state.importText); initSeats(); };
         window.clearRosterText = () => { state.importText = ''; render(); };
         window.toggleBlackboard = () => { state.blackboardPosition = state.blackboardPosition === 'top' ? 'bottom' : 'top'; saveToLocalStorage(); render(); };
@@ -355,23 +425,58 @@
             else if (state.activeTool === 'SWAP') {
                 if (state.swapSourceIndex === null) {
                     state.swapSourceIndex = i;
-                    render(); // ハイライトのために再描写
+                    render(); 
                 } else {
-                    const temp = state.seats[state.swapSourceIndex];
-                    state.seats[state.swapSourceIndex] = state.seats[i];
-                    state.seats[i] = temp;
-                    state.swapSourceIndex = null;
-                    saveToLocalStorage(); render();
+                    const fromIdx = state.swapSourceIndex;
+                    const toIdx = i;
+                    const fromEl = document.querySelector(`[data-seat-index="${fromIdx}"]`);
+                    const toEl = document.querySelector(`[data-seat-index="${toIdx}"]`);
+                    if (fromEl && toEl) {
+                        const fromRect = fromEl.getBoundingClientRect();
+                        const toRect = toEl.getBoundingClientRect();
+                        state.animatingSwap = {
+                            from: fromIdx,
+                            to: toIdx,
+                            dx: toRect.left - fromRect.left,
+                            dy: toRect.top - fromRect.top
+                        };
+                        render(); 
+                        setTimeout(() => {
+                            const temp = state.seats[fromIdx];
+                            state.seats[fromIdx] = state.seats[toIdx];
+                            state.seats[toIdx] = temp;
+                            state.swapSourceIndex = null;
+                            state.animatingSwap = null;
+                            saveToLocalStorage(); 
+                            render();
+                        }, 500);
+                    } else {
+                        const temp = state.seats[fromIdx];
+                        state.seats[fromIdx] = state.seats[toIdx];
+                        state.seats[toIdx] = temp;
+                        state.swapSourceIndex = null;
+                        saveToLocalStorage(); render();
+                    }
                 }
             }
         };
 
         window.studentToggleCard = (i) => { if (state.isShuffling) return; playFlip(); state.revealState[i] = !state.revealState[i]; render(); };
-        window.revealAll = () => { playTada(); state.seats.forEach((_, i) => state.revealState[i] = true); render(); };
+        window.revealAll = () => { playTada(); createConfetti(); state.seats.forEach((_, i) => state.revealState[i] = true); render(); };
         window.drumRollReveal = () => {
             playDrumroll(); state.revealState = {}; render();
             const ids = state.seats.map((_, i) => i).sort(() => Math.random() - 0.5);
-            ids.forEach((idx, i) => setTimeout(() => { state.revealState[idx] = true; playFlip(); render(); }, i * 300 + 1000));
+            ids.forEach((idx, i) => setTimeout(() => { 
+                state.revealState[idx] = true; 
+                playFlip(); 
+                render(); 
+                if (i === ids.length - 1) {
+                    setTimeout(() => {
+                        playTada();
+                        createConfetti();
+                    }, 500);
+                }
+            }, i * 300 + 1000));
         };
         window.hideAll = () => { state.revealState = {}; render(); };
 
@@ -387,6 +492,24 @@
                 state.seats[i] = p; state.lockedSeats[i] = true; state.seatAttributes[i] = null;
             }
             closeModal(); saveToLocalStorage(); render();
+        };
+
+        function openSavePreview(dataUrl) {
+            const overlay = document.getElementById('save-preview-overlay');
+            const img = document.getElementById('save-preview-img');
+            const btn = document.getElementById('direct-download-btn');
+            img.src = dataUrl;
+            overlay.classList.remove('hidden');
+            btn.onclick = () => {
+                const a = document.createElement('a');
+                a.download = "座席表.png";
+                a.href = dataUrl;
+                a.click();
+            };
+            lucide.createIcons();
+        }
+        window.closeSavePreview = () => {
+            document.getElementById('save-preview-overlay').classList.add('hidden');
         };
 
         window.prepareAndCapture = async (type) => {
@@ -416,19 +539,19 @@
                                 cell.style.justifyContent = 'center';
                                 const nameDiv = cell.querySelector('.student-name');
                                 if (nameDiv) { 
-                                    nameDiv.style.fontSize = '24px'; 
-                                    nameDiv.style.lineHeight = '1.2'; 
+                                    nameDiv.style.fontSize = '22px'; 
+                                    nameDiv.style.lineHeight = '1.1'; 
                                     nameDiv.classList.remove('line-clamp-2'); 
-                                    nameDiv.style.padding = '0 5px';
+                                    nameDiv.style.padding = '0 8px';
+                                    nameDiv.style.wordBreak = 'break-all';
                                 }
                             });
                         }
                     }
                 });
                 if (type === 'png') {
-                    canvas.toBlob(async (blob) => {
-                        const a = document.createElement('a'); a.download = "座席表.png"; a.href = canvas.toDataURL(); a.click();
-                    });
+                    const dataUrl = canvas.toDataURL('image/png');
+                    openSavePreview(dataUrl);
                 } else {
                     const imgData = canvas.toDataURL('image/png');
                     const pdf = new jspdf.jsPDF({ orientation: 'landscape', format: 'a4' });
@@ -442,10 +565,9 @@
 
         function renderBlackboard(pos) {
             const chalkPos = pos === 'top' ? 'bottom-1' : 'top-1';
-            return `<div class="w-[70%] h-14 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative my-4 flex items-center justify-center overflow-hidden rounded-sm flex-shrink-0"><div class="absolute ${chalkPos} right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
+            return `<div class="w-[70%] h-14 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative my-4 flex items-center justify-center overflow-hidden rounded-sm flex-shrink-0 text-white/20 font-bold tracking-widest text-xs select-none"><div class="absolute ${chalkPos} right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
         }
 
-        // --- 画面レンダリング ---
         function render() {
             const app = document.getElementById('app');
             if (state.mode === 'teacher') renderTeacher(app);
@@ -460,52 +582,98 @@
             const header = `
                 <header class="w-full h-14 bg-white border-b px-4 flex justify-between items-center shadow-sm shrink-0 z-30">
                     <h1 class="font-bold text-gray-700 text-lg">席替えくん</h1>
-                    <button onclick="setMode('student')" class="bg-teal-600 text-white px-3 py-1.5 rounded font-bold text-xs flex items-center gap-1"><i data-lucide="monitor" class="w-4 h-4"></i> 生徒モード</button>
+                    <button onclick="setMode('student')" class="bg-teal-600 text-white px-3 py-1.5 rounded font-bold text-xs flex items-center gap-1 hover:bg-teal-700 transition-colors"><i data-lucide="monitor" class="w-4 h-4"></i> 生徒モード</button>
                 </header>`;
 
             const sidebarWidth = state.isSidebarCollapsed ? 'w-16' : 'w-64';
             const sidebar = `
                 <aside class="${sidebarWidth} bg-white border-r h-full flex flex-col p-2 gap-3 transition-all duration-300 overflow-y-auto no-scrollbar shrink-0">
-                    <button onclick="toggleSidebar()" class="self-end text-gray-400 hover:text-gray-600"><i data-lucide="${state.isSidebarCollapsed?'chevron-right':'chevron-left'}"></i></button>
-                    <button onclick="shuffleSeatsWithAnimation()" class="bg-indigo-600 text-white p-2 rounded font-bold text-xs flex items-center justify-center gap-2 shadow-sm"><i data-lucide="shuffle" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'席替え実行'}</button>
-                    <button onclick="clearSeats()" class="bg-red-50 text-red-600 p-2 rounded font-bold text-xs border border-red-100 flex items-center justify-center gap-2"><i data-lucide="eraser" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'クリア'}</button>
+                    <button onclick="toggleSidebar()" class="self-end text-gray-400 hover:text-gray-600 p-1"><i data-lucide="${state.isSidebarCollapsed?'chevron-right':'chevron-left'}"></i></button>
+                    <button onclick="shuffleSeatsWithAnimation()" class="bg-indigo-600 text-white p-2 rounded font-bold text-xs flex items-center justify-center gap-2 shadow-sm hover:bg-indigo-700 transition-colors"><i data-lucide="shuffle" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'席替え実行'}</button>
+                    <button onclick="clearSeats()" class="bg-red-50 text-red-600 p-2 rounded font-bold text-xs border border-red-100 flex items-center justify-center gap-2 hover:bg-red-100 transition-colors"><i data-lucide="eraser" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'クリア'}</button>
+                    
                     <div class="${state.isSidebarCollapsed?'hidden':''}">
                         <div class="flex gap-1">
-                            <button onclick="window.print()" class="flex-1 bg-gray-100 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1"><i data-lucide="printer" class="w-3 h-3"></i>印刷</button>
+                            <button onclick="window.print()" class="flex-1 bg-gray-100 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-gray-200 transition-colors"><i data-lucide="printer" class="w-3 h-3"></i>印刷</button>
                             <div class="relative flex-1">
-                                <button onclick="toggleSaveMenu()" class="w-full bg-gray-100 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1"><i data-lucide="download" class="w-3 h-3"></i>保存</button>
-                                ${state.showSaveMenu ? `<div class="absolute top-full left-0 w-full bg-white border shadow-lg rounded z-50 py-1"><button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">画像</button><button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">PDF</button></div>` : ''}
+                                <button onclick="toggleSaveMenu()" class="w-full bg-gray-100 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-gray-200 transition-colors"><i data-lucide="download" class="w-3 h-3"></i>保存</button>
+                                ${state.showSaveMenu ? `
+                                <div class="absolute top-full left-0 w-full bg-white border shadow-xl rounded-md z-50 py-1 mt-1 border-gray-200">
+                                    <button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px] flex items-center gap-2 text-gray-700"><i data-lucide="image" class="w-3 h-3 text-indigo-500"></i>画像で保存</button>
+                                    <button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px] flex items-center gap-2 text-gray-700"><i data-lucide="file-text" class="w-3 h-3 text-red-500"></i>PDFで保存</button>
+                                </div>` : ''}
                             </div>
                         </div>
-                        <section class="bg-green-50 p-2 rounded border border-green-100 mt-4">
-                            <h2 class="font-bold text-[10px] text-green-600 mb-2 uppercase">設定データの管理</h2>
-                            <div class="flex gap-1">
-                                <button onclick="exportDataToFile()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] flex items-center justify-center gap-1"><i data-lucide="save" class="w-3 h-3"></i> 保存</button>
-                                <button onclick="triggerFilePicker()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] flex items-center justify-center gap-1"><i data-lucide="folder-open" class="w-3 h-3"></i> 読込</button>
+
+                        <section class="bg-green-50 rounded border border-green-100 mt-4 overflow-hidden">
+                            <button onclick="toggleDataManager()" class="w-full p-2 flex justify-between items-center text-green-600 hover:bg-green-100 transition-colors">
+                                <span class="font-bold text-[10px] uppercase">設定データの管理</span>
+                                <i data-lucide="${state.isDataManagerOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i>
+                            </button>
+                            ${state.isDataManagerOpen ? `
+                            <div class="p-2 pt-0 space-y-1">
+                                <div class="flex gap-1">
+                                    <button onclick="exportDataToFile()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] flex items-center justify-center gap-1 hover:bg-green-50"><i data-lucide="save" class="w-3 h-3"></i> 保存</button>
+                                    <button onclick="triggerFilePicker()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] flex items-center justify-center gap-1 hover:bg-green-50"><i data-lucide="folder-open" class="w-3 h-3"></i> 読込</button>
+                                </div>
+                                <button onclick="setAsReference()" class="w-full mt-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] hover:bg-green-50">現在を前回として記録</button>
+                            </div>` : ''}
+                        </section>
+
+                        <section class="bg-indigo-50 rounded border border-indigo-100 mt-4 overflow-hidden">
+                            <button onclick="toggleBulkTool()" class="w-full p-2 flex justify-between items-center text-indigo-400 hover:bg-indigo-100 transition-colors">
+                                <span class="font-bold text-[10px] uppercase">一括設定ツール</span>
+                                <i data-lucide="${state.isBulkToolOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i>
+                            </button>
+                            ${state.isBulkToolOpen ? `
+                            <div class="p-2 pt-0">
+                                <div class="grid grid-cols-2 gap-1">
+                                    <button onclick="setActiveTool('CURSOR')" class="p-1 rounded text-[10px] border transition-all ${state.activeTool==='CURSOR'?'bg-white shadow text-indigo-700 border-indigo-200':'text-indigo-400 border-transparent'}">選択</button>
+                                    <button onclick="setActiveTool('EMPTY')" class="p-1 rounded text-[10px] border transition-all ${state.activeTool==='EMPTY'?'bg-gray-700 text-white border-gray-700':'text-indigo-400 border-transparent'}">空席</button>
+                                    <button onclick="setActiveTool('M')" class="p-1 rounded text-[10px] border transition-all ${state.activeTool==='M'?'bg-blue-500 text-white border-blue-500':'text-indigo-400 border-transparent'}">♂ 男子</button>
+                                    <button onclick="setActiveTool('F')" class="p-1 rounded text-[10px] border transition-all ${state.activeTool==='F'?'bg-pink-500 text-white border-pink-500':'text-indigo-400 border-transparent'}">♀ 女子</button>
+                                </div>
+                                <button onclick="setActiveTool('SWAP')" class="w-full mt-1 p-1 rounded text-[10px] border transition-all ${state.activeTool==='SWAP'?'bg-orange-500 text-white border-orange-500':'text-indigo-400 border-transparent'}">席の入れ替え</button>
+                            </div>` : ''}
+                        </section>
+
+                        <section class="border rounded text-[11px] mt-4 overflow-hidden bg-white">
+                            <button onclick="toggleRoster()" class="w-full p-2 flex justify-between items-center text-gray-500 hover:bg-gray-50 transition-colors">
+                                <span class="font-bold uppercase text-[10px]">名簿編集</span>
+                                <i data-lucide="${state.isRosterOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i>
+                            </button>
+                            ${state.isRosterOpen ? `
+                            <div class="p-2 pt-0">
+                                <textarea oninput="updateImportText(this.value)" class="w-full h-32 mt-1 p-1 border rounded text-[10px] font-mono no-scrollbar focus:ring-1 focus:ring-indigo-300 outline-none">${state.importText}</textarea>
+                                <div class="flex gap-1 mt-1">
+                                    <button onclick="runImport()" class="flex-1 bg-gray-100 py-1 rounded font-bold text-[10px] hover:bg-gray-200">更新</button>
+                                    <button onclick="clearRosterText()" class="flex-1 bg-red-50 text-red-600 py-1 rounded font-bold text-[10px] border border-red-100 hover:bg-red-100">クリア</button>
+                                </div>
+                            </div>` : ''}
+                        </section>
+
+                        <div class="text-[11px] space-y-2 mt-4 bg-gray-50 p-2 rounded">
+                            <!-- 横幅・縦幅を1行に集約 -->
+                            <div class="flex items-center justify-between gap-1 text-gray-600">
+                                <div class="flex items-center gap-1">
+                                    <span class="font-bold">横</span>
+                                    <button onclick="updateCols(${state.cols-1})" class="bg-white border w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100">-</button>
+                                    <span class="w-3 text-center">${state.cols}</span>
+                                    <button onclick="updateCols(${state.cols+1})" class="bg-white border w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100">+</button>
+                                </div>
+                                <div class="w-px h-4 bg-gray-300 mx-0.5"></div>
+                                <div class="flex items-center gap-1">
+                                    <span class="font-bold">縦</span>
+                                    <button onclick="updateRows(${state.rows-1})" class="bg-white border w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100">-</button>
+                                    <span class="w-3 text-center">${state.rows}</span>
+                                    <button onclick="updateRows(${state.rows+1})" class="bg-white border w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100">+</button>
+                                </div>
                             </div>
-                            <button onclick="setAsReference()" class="w-full mt-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px]">現在を前回として記録</button>
-                        </section>
-                        <section class="bg-indigo-50 p-2 rounded border border-indigo-100 mt-4">
-                            <h2 class="font-bold text-[10px] text-indigo-400 mb-2 uppercase">一括設定</h2>
-                            <div class="grid grid-cols-2 gap-1">
-                                <button onclick="setActiveTool('CURSOR')" class="p-1 rounded text-[10px] border ${state.activeTool==='CURSOR'?'bg-white shadow text-indigo-700':'text-indigo-400'}">選択</button>
-                                <button onclick="setActiveTool('EMPTY')" class="p-1 rounded text-[10px] border ${state.activeTool==='EMPTY'?'bg-gray-700 text-white':'text-indigo-400'}">空席</button>
-                                <button onclick="setActiveTool('M')" class="p-1 rounded text-[10px] border ${state.activeTool==='M'?'bg-blue-500 text-white':'text-indigo-400'}">♂ 男子</button>
-                                <button onclick="setActiveTool('F')" class="p-1 rounded text-[10px] border ${state.activeTool==='F'?'bg-pink-500 text-white':'text-indigo-400'}">♀ 女子</button>
-                            </div>
-                            <button onclick="setActiveTool('SWAP')" class="w-full mt-1 p-1 rounded text-[10px] border ${state.activeTool==='SWAP'?'bg-orange-500 text-white':'text-indigo-400'}">席の入れ替え</button>
-                        </section>
-                        <section class="border rounded p-2 text-[11px] mt-4">
-                            <div class="flex justify-between items-center cursor-pointer" onclick="toggleRoster()"><span class="font-bold text-gray-500">名簿編集</span><i data-lucide="${state.isRosterOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i></div>
-                            ${state.isRosterOpen ? `<textarea oninput="updateImportText(this.value)" class="w-full h-32 mt-2 p-1 border rounded text-[10px] font-mono no-scrollbar">${state.importText}</textarea><div class="flex gap-1 mt-1"><button onclick="runImport()" class="flex-1 bg-gray-100 py-1 rounded font-bold text-[10px]">更新</button><button onclick="clearRosterText()" class="flex-1 bg-red-50 text-red-600 py-1 rounded font-bold text-[10px] border border-red-100">クリア</button></div>` : ''}
-                        </section>
-                        <div class="text-[11px] space-y-2 mt-4">
-                            <div class="flex items-center justify-between">横幅 <div class="flex items-center gap-2"><button onclick="updateCols(${state.cols-1})" class="bg-gray-100 w-6 rounded">-</button><span>${state.cols}</span><button onclick="updateCols(${state.cols+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
-                            <div class="flex items-center justify-between">縦幅 <div class="flex items-center gap-2"><button onclick="updateRows(${state.rows-1})" class="bg-gray-100 w-6 rounded">-</button><span>${state.rows}</span><button onclick="updateRows(${state.rows+1})" class="bg-gray-100 w-6 rounded">+</button></div></div>
-                            <button onclick="toggleBlackboard()" class="w-full bg-white border py-1 rounded text-gray-500 mt-2 text-[10px]">黒板の上下を切り替え</button>
-                            <div class="mt-4 p-2 bg-gray-50 border rounded space-y-2">
-                                <label class="flex items-center gap-2 text-[10px] cursor-pointer"><input type="checkbox" ${state.avoidSameSeat?'checked':''} onchange="toggleConstraint('avoidSameSeat')"> 前回と同じ席を避ける</label>
-                                <label class="flex items-center gap-2 text-[10px] cursor-pointer"><input type="checkbox" ${state.avoidSamePartner?'checked':''} onchange="toggleConstraint('avoidSamePartner')"> 前回と同じパートナーを避ける</label>
+                            
+                            <button onclick="toggleBlackboard()" class="w-full bg-white border py-1 rounded text-gray-500 mt-2 text-[10px] hover:bg-gray-50">黒板の上下を切り替え</button>
+                            <div class="mt-4 space-y-2 border-t pt-2">
+                                <label class="flex items-center gap-2 text-[10px] cursor-pointer text-gray-600"><input type="checkbox" ${state.avoidSameSeat?'checked':''} onchange="toggleConstraint('avoidSameSeat')" class="rounded"> 前回と同じ席を避ける</label>
+                                <label class="flex items-center gap-2 text-[10px] cursor-pointer text-gray-600"><input type="checkbox" ${state.avoidSamePartner?'checked':''} onchange="toggleConstraint('avoidSamePartner')" class="rounded"> 前回と同じパートナーを避ける</label>
                             </div>
                         </div>
                     </div>
@@ -520,7 +688,6 @@
                 const isSwapping = state.activeTool === 'SWAP' && state.swapSourceIndex === i;
 
                 let bgColor = 'bg-gray-50';
-                // 入れ替え中のハイライト設定（細いオレンジの枠線）
                 let ring = isSwapping ? 'border-2 border-orange-400 z-10' : 'border-gray-300';
                 
                 if (student) bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
@@ -529,10 +696,19 @@
                 else if (attr === 'F') bgColor = 'bg-pink-50 border-dashed border-pink-300';
                 else if (isLocked) bgColor = 'bg-white border-red-200';
 
-                let animStyle = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*40}px, ${(Math.random()-0.5)*40}px) rotate(${(Math.random()-0.5)*20}deg); transition: transform 0.2s;` : '';
+                let animStyle = '';
+                if (state.isShuffling) {
+                    animStyle = `transform: translate(${(Math.random()-0.5)*40}px, ${(Math.random()-0.5)*40}px) rotate(${(Math.random()-0.5)*20}deg); transition: transform 0.2s;`;
+                } else if (state.animatingSwap) {
+                    if (state.animatingSwap.from === i) {
+                        animStyle = `transform: translate(${state.animatingSwap.dx}px, ${state.animatingSwap.dy}px); z-index: 100; transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);`;
+                    } else if (state.animatingSwap.to === i) {
+                        animStyle = `transform: translate(${-state.animatingSwap.dx}px, ${-state.animatingSwap.dy}px); z-index: 100; transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);`;
+                    }
+                }
 
                 cellsHtml += `
-                <div onclick="handleSeatClick(${i})" class="seat-cell rounded border flex flex-col items-center justify-center relative ${bgColor} ${ring} overflow-hidden" style="width: 120px; height: 60px; ${animStyle}">
+                <div data-seat-index="${i}" onclick="handleSeatClick(${i})" class="seat-cell rounded border flex flex-col items-center justify-center relative ${bgColor} ${ring} overflow-hidden cursor-pointer hover:shadow-inner transition-shadow" style="width: 120px; height: 60px; ${animStyle}">
                     ${student ? `<span class="text-[12px] font-bold text-gray-400 absolute top-0.5 left-1">${student.number}</span><div class="student-name text-[13px] font-bold text-gray-800 line-clamp-2 text-center px-1">${student.name}</div>` : `<span class="text-gray-300 font-bold text-xs">${attr==='EMPTY'?'×':getVisualSeatNumber(i)}</span>`}
                     <div class="absolute top-0.5 right-1">${!student && isLocked ? '<i data-lucide="lock" class="w-2 h-2 text-red-400"></i>' : ''}</div>
                 </div>`;
@@ -564,13 +740,13 @@
                         <button onclick="toggleBlackboard()" class="px-4 py-2 bg-white/10 text-white rounded-xl font-bold text-sm">黒板↑↓</button>
                         <button onclick="toggleSound()" class="p-2 bg-white/10 text-white rounded-full"><i data-lucide="${state.isSoundEnabled?'volume-2':'volume-x'}"></i></button>
                         <div class="w-px h-8 bg-white/20 mx-2"></div>
-                        <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling?'disabled':''} class="bg-indigo-500 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 text-sm"><i data-lucide="shuffle" class="w-4 h-4"></i> 席替え</button>
-                        <button onclick="drumRollReveal()" ${state.isShuffling?'disabled':''} class="bg-yellow-500 text-black px-6 py-2 rounded-xl font-bold text-sm">公開</button>
-                        <button onclick="revealAll()" ${state.isShuffling?'disabled':''} class="bg-green-500 text-white px-8 py-2 rounded-xl font-bold text-sm">一斉</button>
-                        <button onclick="toggleControls(false)" class="p-2 bg-white/10 text-white rounded-full"><i data-lucide="x"></i></button>
+                        <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling?'disabled':''} class="bg-indigo-500 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 text-sm transition-transform active:scale-95 shadow-lg"><i data-lucide="shuffle" class="w-4 h-4"></i> 席替え</button>
+                        <button onclick="drumRollReveal()" ${state.isShuffling?'disabled':''} class="bg-yellow-500 text-black px-6 py-2 rounded-xl font-bold text-sm transition-transform active:scale-95 shadow-lg">順番に公開</button>
+                        <button onclick="revealAll()" ${state.isShuffling?'disabled':''} class="bg-green-500 text-white px-8 py-2 rounded-xl font-bold text-sm transition-transform active:scale-95 shadow-lg">一斉</button>
+                        <button onclick="toggleControls(false)" class="p-2 bg-white/10 text-white rounded-full hover:bg-white/20"><i data-lucide="x"></i></button>
                     </div>
                 </div>
-                ${!state.isStudentControlsVisible ? `<button onclick="toggleControls(true)" class="fixed bottom-6 right-6 bg-indigo-500 text-white p-4 rounded-full shadow-2xl z-50"><i data-lucide="chevron-up"></i></button>` : ''}`;
+                ${!state.isStudentControlsVisible ? `<button onclick="toggleControls(true)" class="fixed bottom-6 right-6 bg-indigo-500 text-white p-4 rounded-full shadow-2xl z-50 animate-bounce"><i data-lucide="chevron-up"></i></button>` : ''}`;
 
             let cellsHtml = '';
             displayIndices.forEach(i => {
@@ -584,7 +760,7 @@
                             <span class="text-[10px] font-bold">NO.</span><span class="text-xl font-bold">${student?.number || getVisualSeatNumber(i)}</span>
                         </div>
                         <div class="absolute inset-0 backface-hidden rotate-y-180 rounded-lg shadow-md border-b-4 border-r-4 ${student?.gender==='M'?'bg-blue-100':'bg-pink-100'} flex items-center justify-center text-gray-800" style="transform: rotateY(180deg); backface-visibility: hidden;">
-                            ${student ? `<span class="absolute top-1 left-2 text-[10px] font-bold opacity-30">${student.number}</span><div class="text-[13px] font-bold text-center px-1">${student.name}</div>` : ''}
+                            ${student ? `<span class="absolute top-1 left-2 text-[10px] font-bold opacity-30">${student.number}</span><div class="text-[13px] font-bold text-center px-1 leading-tight">${student.name}</div>` : ''}
                         </div>
                     </div>
                 </div>`;
@@ -609,14 +785,14 @@
             const placed = new Set(state.seats.filter(id => id !== null && id !== state.seats[i]));
             const filtered = state.students.filter(s => !placed.has(s.id) && (s.name || '').includes(state.searchQuery));
             let listHtml = filtered.map(s => `
-                <button onclick="editSeat('SET_STUDENT', '${s.id}')" class="w-full p-3 text-left flex justify-between items-center hover:bg-indigo-50 border-b text-sm">
-                    <div class="flex items-center gap-3"><span class="text-gray-400 w-6">${s.number}</span><span class="font-bold">${s.name}</span></div>
+                <button onclick="editSeat('SET_STUDENT', '${s.id}')" class="w-full p-3 text-left flex justify-between items-center hover:bg-indigo-50 border-b text-sm transition-colors">
+                    <div class="flex items-center gap-3"><span class="text-gray-400 w-6 font-mono">${s.number}</span><span class="font-bold text-gray-700">${s.name}</span></div>
                     <span class="px-2 py-0.5 rounded text-[10px] font-bold ${s.gender==='M'?'bg-blue-100 text-blue-600':'bg-pink-100 text-pink-600'}">${s.gender==='M'?'男':'女'}</span>
                 </button>`).join('');
-            content.innerHTML = `<div class="p-4 border-b bg-gray-50 flex justify-between items-center font-bold font-sans text-gray-700">座席 No.${getVisualSeatNumber(i)} の設定<button onclick="closeModal()"><i data-lucide="x"></i></button></div>
+            content.innerHTML = `<div class="p-4 border-b bg-gray-50 flex justify-between items-center font-bold font-sans text-gray-700">座席 No.${getVisualSeatNumber(i)} の設定<button onclick="closeModal()" class="p-1 hover:bg-gray-200 rounded-full transition-colors"><i data-lucide="x"></i></button></div>
                 <div class="p-4 space-y-4 overflow-y-auto no-scrollbar">
-                    <div class="grid grid-cols-2 gap-2"><button onclick="editSeat('SET_ATTRIBUTE', 'EMPTY')" class="p-3 border rounded-xl text-xs font-bold ${attr==='EMPTY'?'bg-gray-800 text-white':'bg-white'}">空席にする</button><button onclick="editSeat('SET_ATTRIBUTE', null)" class="p-3 border rounded-xl text-xs font-bold ${!attr && !state.lockedSeats[i]?'bg-indigo-600 text-white':'bg-white'}">指定なし</button></div>
-                    <input type="text" placeholder="名前検索..." class="w-full p-3 border rounded-xl text-sm" value="${state.searchQuery}" oninput="updateSearchQuery(this.value)"><div class="max-h-60 overflow-y-auto border rounded-xl divide-y no-scrollbar">${listHtml}</div></div>`;
+                    <div class="grid grid-cols-2 gap-2"><button onclick="editSeat('SET_ATTRIBUTE', 'EMPTY')" class="p-3 border rounded-xl text-xs font-bold transition-all ${attr==='EMPTY'?'bg-gray-800 text-white border-gray-800':'bg-white hover:bg-gray-50'}">空席にする</button><button onclick="editSeat('SET_ATTRIBUTE', null)" class="p-3 border rounded-xl text-xs font-bold transition-all ${!attr && !state.lockedSeats[i]?'bg-indigo-600 text-white border-indigo-600':'bg-white hover:bg-gray-50'}">指定なし</button></div>
+                    <div class="relative"><i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i><input type="text" placeholder="名前検索..." class="w-full pl-10 pr-3 py-3 border rounded-xl text-sm focus:ring-1 focus:ring-indigo-300 outline-none" value="${state.searchQuery}" oninput="updateSearchQuery(this.value)"></div><div class="max-h-60 overflow-y-auto border rounded-xl divide-y no-scrollbar">${listHtml}</div></div>`;
             lucide.createIcons();
         }
 
