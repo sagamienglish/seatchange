@@ -40,6 +40,9 @@
         <div id="modal-content" class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]" onclick="event.stopPropagation()"></div>
     </div>
 
+    <!-- 非表示のファイル入力（読み込み用） -->
+    <input type="file" id="import-file-input" class="hidden" accept=".json" onchange="importDataFromFile(event)">
+
     <script>
         // --- データ定義 ---
         const INITIAL_STUDENTS_TEXT = `1, 佐藤 健, 男
@@ -92,7 +95,7 @@
 48, 今井 桜, 女`;
 
         // --- 状態管理 ---
-        const state = {
+        let state = {
             mode: 'teacher', 
             students: [],
             rows: 8,
@@ -115,6 +118,94 @@
             isSoundEnabled: true,
             isStudentControlsVisible: true,
             isSidebarCollapsed: false 
+        };
+
+        // --- 保存・読込ロジック (Simple Storage) ---
+        
+        // ブラウザへの自動保存
+        function saveToLocalStorage() {
+            const dataToSave = {
+                rows: state.rows,
+                cols: state.cols,
+                seats: state.seats,
+                lockedSeats: state.lockedSeats,
+                seatAttributes: state.seatAttributes,
+                importText: state.importText,
+                blackboardPosition: state.blackboardPosition
+            };
+            localStorage.setItem('sekigae_kun_data', JSON.stringify(dataToSave));
+        }
+
+        // ブラウザからの自動読み込み
+        function loadFromLocalStorage() {
+            const saved = localStorage.getItem('sekigae_kun_data');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    state.rows = parsed.rows || state.rows;
+                    state.cols = parsed.cols || state.cols;
+                    state.seats = parsed.seats || state.seats;
+                    state.lockedSeats = parsed.lockedSeats || {};
+                    state.seatAttributes = parsed.seatAttributes || {};
+                    state.importText = parsed.importText || state.importText;
+                    state.blackboardPosition = parsed.blackboardPosition || 'top';
+                } catch (e) {
+                    console.error("読込エラー", e);
+                }
+            }
+        }
+
+        // ファイルとして書き出し
+        window.exportDataToFile = () => {
+            const data = {
+                version: "1.0",
+                timestamp: new Date().toLocaleString(),
+                rows: state.rows,
+                cols: state.cols,
+                seats: state.seats,
+                lockedSeats: state.lockedSeats,
+                seatAttributes: state.seatAttributes,
+                importText: state.importText,
+                blackboardPosition: state.blackboardPosition
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `席替えくん設定_${new Date().toLocaleDateString().replace(/\//g,'-')}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        };
+
+        // ファイルから読み込み
+        window.triggerFilePicker = () => {
+            document.getElementById('import-file-input').click();
+        };
+
+        window.importDataFromFile = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    state.rows = parsed.rows || 8;
+                    state.cols = parsed.cols || 6;
+                    state.seats = parsed.seats || [];
+                    state.lockedSeats = parsed.lockedSeats || {};
+                    state.seatAttributes = parsed.seatAttributes || {};
+                    state.importText = parsed.importText || INITIAL_STUDENTS_TEXT;
+                    state.blackboardPosition = parsed.blackboardPosition || 'top';
+                    
+                    parseStudents(state.importText);
+                    initSeats();
+                    alert("設定を読み込みました！");
+                } catch (err) {
+                    alert("ファイルの形式が正しくありません。");
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = ''; // Clear for next time
         };
 
         // --- 音声再生 ---
@@ -181,6 +272,7 @@
             };
             state.lockedSeats = resizeObj(state.lockedSeats);
             state.seatAttributes = resizeObj(state.seatAttributes);
+            saveToLocalStorage(); // 変更があったら自動保存
             render();
         }
 
@@ -236,6 +328,7 @@
             }
             state.seats = newSeats;
             state.revealState = {};
+            saveToLocalStorage(); // シャッフル結果も自動保存
             render();
         }
 
@@ -258,15 +351,14 @@
         window.toggleSaveMenu = () => { state.showSaveMenu = !state.showSaveMenu; render(); };
         window.setActiveTool = (t) => { state.activeTool = t; state.swapSourceIndex = null; render(); };
         window.toggleRoster = () => { state.isRosterOpen = !state.isRosterOpen; render(); };
-        window.updateImportUrl = (v) => { state.importUrl = v; };
         window.updateImportText = (v) => { state.importText = v; };
         window.runImport = () => { parseStudents(state.importText); initSeats(); };
         window.clearRosterText = () => { state.importText = ''; render(); };
         window.runUrlImport = () => handleUrlImport();
         window.updateRows = (v) => { state.rows = Math.max(1, parseInt(v) || 1); initSeats(); };
         window.updateCols = (val) => { state.cols = Math.max(1, parseInt(val) || 1); initSeats(); };
-        window.toggleBlackboard = () => { state.blackboardPosition = state.blackboardPosition === 'top' ? 'bottom' : 'top'; render(); };
-        window.clearSeats = () => { state.seats = state.seats.map((id, i) => state.lockedSeats[i] ? id : null); state.revealState = {}; render(); };
+        window.toggleBlackboard = () => { state.blackboardPosition = state.blackboardPosition === 'top' ? 'bottom' : 'top'; saveToLocalStorage(); render(); };
+        window.clearSeats = () => { state.seats = state.seats.map((id, i) => state.lockedSeats[i] ? id : null); state.revealState = {}; saveToLocalStorage(); render(); };
         window.toggleSidebar = () => { state.isSidebarCollapsed = !state.isSidebarCollapsed; render(); };
         window.toggleControls = (v) => { state.isStudentControlsVisible = v; render(); };
 
@@ -275,10 +367,10 @@
             else if (state.activeTool === 'EMPTY') { 
                 state.seatAttributes[i] = state.seatAttributes[i] === 'EMPTY' ? null : 'EMPTY'; 
                 if(state.seatAttributes[i]){state.seats[i]=null; state.lockedSeats[i]=false;} 
-                render(); 
+                saveToLocalStorage(); render(); 
             }
-            else if (state.activeTool === 'M') { state.seatAttributes[i] = state.seatAttributes[i] === 'M' ? null : 'M'; state.lockedSeats[i]=false; render(); }
-            else if (state.activeTool === 'F') { state.seatAttributes[i] = state.seatAttributes[i] === 'F' ? null : 'F'; state.lockedSeats[i]=false; render(); }
+            else if (state.activeTool === 'M') { state.seatAttributes[i] = state.seatAttributes[i] === 'M' ? null : 'M'; state.lockedSeats[i]=false; saveToLocalStorage(); render(); }
+            else if (state.activeTool === 'F') { state.seatAttributes[i] = state.seatAttributes[i] === 'F' ? null : 'F'; state.lockedSeats[i]=false; saveToLocalStorage(); render(); }
             else if (state.activeTool === 'SWAP') {
                 if (state.swapSourceIndex === null) state.swapSourceIndex = i;
                 else {
@@ -286,8 +378,9 @@
                     state.seats[state.swapSourceIndex] = state.seats[i];
                     state.seats[i] = temp;
                     state.swapSourceIndex = null;
+                    saveToLocalStorage();
+                    render();
                 }
-                render();
             }
         };
 
@@ -311,10 +404,10 @@
                 const prev = state.seats.indexOf(p); if (prev !== -1) { state.seats[prev] = null; state.lockedSeats[prev] = false; }
                 state.seats[i] = p; state.lockedSeats[i] = true; state.seatAttributes[i] = null;
             }
-            closeModal(); render();
+            closeModal(); saveToLocalStorage(); render();
         };
 
-        // --- 保存処理 ---
+        // --- 保存処理 (画像/PDF) ---
         window.prepareAndCapture = async (type) => {
             state.showSaveMenu = false; render();
             const el = document.getElementById('capture-container');
@@ -412,6 +505,16 @@
                                 ${state.showSaveMenu ? `<div class="absolute top-full left-0 w-full bg-white border shadow-lg rounded z-50 py-1"><button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">画像</button><button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px]">PDF</button></div>` : ''}
                             </div>
                         </div>
+
+                        <!-- データの保存・読込セクション -->
+                        <section class="bg-green-50 p-2 rounded border border-green-100 mt-4">
+                            <h2 class="font-bold text-[10px] text-green-600 mb-2 uppercase">設定データの管理</h2>
+                            <div class="flex gap-1">
+                                <button onclick="exportDataToFile()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] hover:bg-green-100 flex items-center justify-center gap-1"><i data-lucide="save" class="w-3 h-3"></i> 保存</button>
+                                <button onclick="triggerFilePicker()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] hover:bg-green-100 flex items-center justify-center gap-1"><i data-lucide="folder-open" class="w-3 h-3"></i> 読込</button>
+                            </div>
+                        </section>
+
                         <section class="bg-indigo-50 p-2 rounded border border-indigo-100 mt-4">
                             <h2 class="font-bold text-[10px] text-indigo-400 mb-2 uppercase">一括設定</h2>
                             <div class="grid grid-cols-2 gap-1">
@@ -579,7 +682,11 @@
             lucide.createIcons();
         }
 
-        window.onload = () => { parseStudents(INITIAL_STUDENTS_TEXT); initSeats(); };
+        window.onload = () => { 
+            loadFromLocalStorage(); // 最初に保存データを復元
+            parseStudents(state.importText); 
+            initSeats(); 
+        };
     </script>
 </body>
 </html>
