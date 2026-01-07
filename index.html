@@ -149,7 +149,7 @@
             editingSeatIndex: null,
             searchQuery: '',
             showSaveMenu: false,
-            isRosterOpen: true, 
+            isRosterOpen: false, // デフォルトで閉じるに変更
             isDataManagerOpen: false,
             isBulkToolOpen: true,
             isSoundEnabled: true,
@@ -207,7 +207,7 @@
         window.setAsReference = () => {
             state.referenceSeats = [...state.seats];
             saveToLocalStorage();
-            alert("現在の席を記録しました。");
+            alert("現在の座席を「前回の席」として記録しました。\n次回席替え時に「前回と同じ席を避ける」などが有効になります。");
             render();
         };
 
@@ -218,6 +218,9 @@
             a.href = URL.createObjectURL(blob);
             a.download = `席替えくん設定_${new Date().toLocaleDateString().replace(/\//g,'-')}.json`;
             a.click();
+            // メニューを閉じる
+            state.showSaveMenu = false;
+            render();
         };
 
         window.triggerFilePicker = () => document.getElementById('import-file-input').click();
@@ -232,8 +235,8 @@
                     Object.assign(state, parsed);
                     parseStudents(state.importText);
                     initSeats();
-                    alert("読込完了");
-                } catch (err) { alert("形式が違います。"); }
+                    alert("設定データを読み込みました。");
+                } catch (err) { alert("ファイル形式が正しくありません。"); }
             };
             reader.readAsText(file);
             event.target.value = '';
@@ -633,35 +636,28 @@
                     
                     <div class="${state.isSidebarCollapsed?'hidden':''}">
                         <div class="flex gap-1">
-                            <button onclick="window.print()" class="flex-1 bg-gray-100 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-gray-200 transition-colors"><i data-lucide="printer" class="w-3 h-3"></i>印刷</button>
+                            <!-- ① 保存ボタン（メニュー付き） -->
                             <div class="relative flex-1">
-                                <button onclick="toggleSaveMenu()" class="w-full bg-gray-100 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-gray-200 transition-colors"><i data-lucide="download" class="w-3 h-3"></i>保存</button>
+                                <button onclick="toggleSaveMenu()" class="w-full bg-indigo-50 border border-indigo-100 text-indigo-600 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-indigo-100 transition-colors"><i data-lucide="download" class="w-3 h-3"></i>保存</button>
                                 ${state.showSaveMenu ? `
-                                <div class="absolute top-full left-0 w-full bg-white border shadow-xl rounded-md z-50 py-1 mt-1 border-gray-200">
-                                    <button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px] flex items-center gap-2 text-gray-700"><i data-lucide="image" class="w-3 h-3 text-indigo-500"></i>画像で保存</button>
-                                    <button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px] flex items-center gap-2 text-gray-700"><i data-lucide="file-text" class="w-3 h-3 text-red-500"></i>PDFで保存</button>
+                                <div class="absolute top-full left-0 w-[220%] bg-white border shadow-xl rounded-md z-50 py-1 mt-1 border-gray-200">
+                                    <div class="px-2 py-1 text-[10px] text-gray-400 font-bold">出力形式を選択</div>
+                                    <button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px] flex items-center gap-2 text-gray-700"><i data-lucide="image" class="w-3 h-3 text-indigo-500"></i>画像 (.png)</button>
+                                    <button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px] flex items-center gap-2 text-gray-700"><i data-lucide="file-text" class="w-3 h-3 text-red-500"></i>PDF (.pdf)</button>
+                                    <div class="border-t my-1"></div>
+                                    <button onclick="exportDataToFile()" class="w-full p-2 text-left hover:bg-gray-50 text-[10px] flex items-center gap-2 text-gray-700"><i data-lucide="save" class="w-3 h-3 text-green-600"></i>ファイルで保存 (設定)</button>
                                 </div>` : ''}
                             </div>
+                            <!-- ② 読込ボタン -->
+                            <button onclick="triggerFilePicker()" class="flex-1 bg-gray-50 border border-gray-200 text-gray-600 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-gray-100 transition-colors"><i data-lucide="folder-open" class="w-3 h-3"></i>読込</button>
                         </div>
-
-                        <section class="bg-green-50 rounded border border-green-100 mt-4 overflow-hidden">
-                            <button onclick="toggleDataManager()" class="w-full p-2 flex justify-between items-center text-green-600 hover:bg-green-100 transition-colors">
-                                <span class="font-bold text-[10px] uppercase">設定データの管理</span>
-                                <i data-lucide="${state.isDataManagerOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i>
-                            </button>
-                            ${state.isDataManagerOpen ? `
-                            <div class="p-2 pt-0 space-y-1">
-                                <div class="flex gap-1">
-                                    <button onclick="exportDataToFile()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] flex items-center justify-center gap-1 hover:bg-green-50"><i data-lucide="save" class="w-3 h-3"></i> 保存</button>
-                                    <button onclick="triggerFilePicker()" class="flex-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] flex items-center justify-center gap-1 hover:bg-green-50"><i data-lucide="folder-open" class="w-3 h-3"></i> 読込</button>
-                                </div>
-                                <button onclick="setAsReference()" class="w-full mt-1 bg-white border border-green-200 text-green-700 py-1.5 rounded font-bold text-[10px] hover:bg-green-50">現在を前回として記録</button>
-                            </div>` : ''}
-                        </section>
+                        
+                        <!-- ③ 前回として記録ボタン -->
+                        <button onclick="setAsReference()" class="w-full mt-2 bg-green-50 border border-green-100 text-green-700 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-green-100 transition-colors"><i data-lucide="history" class="w-3 h-3"></i>現在の座席を前回として記録</button>
 
                         <section class="bg-indigo-50 rounded border border-indigo-100 mt-4 overflow-hidden">
                             <button onclick="toggleBulkTool()" class="w-full p-2 flex justify-between items-center text-indigo-400 hover:bg-indigo-100 transition-colors">
-                                <span class="font-bold text-[10px] uppercase">一括設定ツール</span>
+                                <span class="font-bold text-[10px] uppercase">座席設定ツール</span>
                                 <i data-lucide="${state.isBulkToolOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i>
                             </button>
                             ${state.isBulkToolOpen ? `
