@@ -2,839 +2,979 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>席替えくん</title>
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    
-    <!-- html2canvas & jsPDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Word Hockey Arcade - Final</title>
     <style>
-        .perspective-1000 { perspective: 1000px; }
-        .transform-style-3d { transform-style: preserve-3d; }
-        .backface-hidden { backface-visibility: hidden; }
-        .rotate-y-180 { transform: rotateY(180deg); }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-
-        @media print {
-            @page { size: landscape; margin: 5mm; }
-            .print\:hidden { display: none !important; }
-            body { -webkit-print-color-adjust: exact; }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            font-family: 'Arial Black', sans-serif;
+            overflow: hidden;
+            touch-action: none; /* ブラウザのスクロール等を無効化 */
+            overscroll-behavior: none; /* バウンススクロール防止 */
+            user-select: none;
+            -webkit-user-select: none;
         }
 
-        /* 席の入れ替えアニメーション用 */
-        .seat-transition {
-            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-            z-index: 50;
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(circle, #2a2a2a 0%, #000 100%);
+            overflow: hidden;
         }
 
-        /* クラッカーの紙吹雪用 */
-        .confetti {
-            position: fixed;
-            width: 10px;
-            height: 10px;
+        canvas {
+            display: block;
+            touch-action: none;
+        }
+
+        /* UIレイヤー */
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none;
-            z-index: 100;
-            border-radius: 2px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
         }
+
+        /* メニューに戻るボタン（ゲーム中のみ表示） */
+        #back-to-menu-btn {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 10px 20px;
+            font-size: 14px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid #fff;
+            color: #fff;
+            border-radius: 20px;
+            cursor: pointer;
+            pointer-events: auto;
+            display: none; /* 初期は非表示 */
+            z-index: 20;
+        }
+        #back-to-menu-btn:active { background: rgba(255, 255, 255, 0.4); }
+
+        .message-box {
+            background: rgba(0, 0, 0, 0.9);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            color: #fff;
+            border: 4px solid #00d2ff;
+            box-shadow: 0 0 30px #00d2ff;
+            pointer-events: auto;
+            max-width: 80%;
+            display: none; /* 初期は非表示 */
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        #start-screen { display: block; } /* 初期表示 */
+
+        h1 { margin: 0 0 20px; font-size: 2.5rem; color: #00d2ff; text-shadow: 0 0 10px #00d2ff; }
+        p { font-size: 1rem; line-height: 1.6; margin-bottom: 20px; color: #ccc; }
+        .highlight { color: #ffcc00; font-weight: bold; }
+        
+        button.main-btn {
+            background: linear-gradient(90deg, #00d2ff, #0077ff);
+            border: none;
+            padding: 15px 50px;
+            font-size: 1.5rem;
+            color: white;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0, 210, 255, 0.4);
+            transition: transform 0.1s;
+            margin-top: 10px;
+        }
+        button.main-btn:active { transform: scale(0.95); }
+
+        /* 勝利数表示エリア */
+        .stats-area {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #444;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .win-counts {
+            display: flex;
+            gap: 30px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        .win-blue { color: #00d2ff; }
+        .win-red { color: #ff0055; }
+        
+        #reset-stats-btn {
+            background: #444;
+            border: 1px solid #666;
+            color: #aaa;
+            padding: 5px 15px;
+            border-radius: 5px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        #reset-stats-btn:active { background: #555; }
+
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800 font-sans h-screen overflow-hidden flex flex-col">
+<body>
 
-    <div id="app" class="h-full w-full flex flex-col overflow-hidden"></div>
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    
+    <!-- 左上メニューボタン -->
+    <button id="back-to-menu-btn">← MENU</button>
+    
+    <div id="ui-layer">
+        <!-- スタート画面 -->
+        <div id="start-screen" class="message-box">
+            <h1>Word Hockey<br><span style="font-size:0.6em">Bonus Match</span></h1>
+            <p>
+                10点先取 または 60秒で終了！<br>
+                ゴール後は<span class="highlight">早押しボーナスクイズ</span>！<br>
+                正解すると+1点！
+            </p>
+            <button id="start-btn" class="main-btn">GAME START</button>
 
-    <!-- モーダル（設定用） -->
-    <div id="modal-overlay" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 hidden" onclick="closeModal()">
-        <div id="modal-content" class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]" onclick="event.stopPropagation()"></div>
-    </div>
-
-    <!-- 保存用プレビューモーダル（iPad/iOS対応） -->
-    <div id="save-preview-overlay" class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 hidden" onclick="closeSavePreview()">
-        <div class="bg-white rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
-            <div class="p-4 border-b flex justify-between items-center">
-                <h3 class="font-bold text-gray-700">保存プレビュー</h3>
-                <button onclick="closeSavePreview()" class="p-1 hover:bg-gray-100 rounded-full"><i data-lucide="x"></i></button>
-            </div>
-            <div class="p-6 overflow-y-auto flex flex-col items-center gap-4">
-                <p class="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg w-full text-center">
-                    <i data-lucide="info" class="inline-block w-4 h-4 mr-1"></i>
-                    iPad/iPhoneの方は、画像を<strong>長押し</strong>して「"写真"に追加」または「保存」を選択してください。
-                </p>
-                <img id="save-preview-img" class="max-w-full shadow-lg border rounded" src="" alt="座席表プレビュー">
-                <button id="direct-download-btn" class="bg-indigo-600 text-white px-6 py-2 rounded-full font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center gap-2">
-                    <i data-lucide="download" class="w-5 h-5"></i> PCで直接保存
-                </button>
+            <!-- 勝利数記録 -->
+            <div class="stats-area">
+                <div class="win-counts">
+                    <span class="win-blue">BLUE: <span id="wins-blue">0</span>勝</span>
+                    <span class="win-red">RED: <span id="wins-red">0</span>勝</span>
+                </div>
+                <button id="reset-stats-btn">勝利数をリセット</button>
             </div>
         </div>
+
+        <!-- ゲームオーバー画面 -->
+        <div id="gameover-screen" class="message-box">
+            <h1 id="winner-text">BLUE WINS!</h1>
+            <p id="final-score">5 - 3</p>
+            <button id="retry-btn" class="main-btn">PLAY AGAIN</button>
+            <br><br>
+            <button id="menu-return-btn" style="background:none; border:1px solid #fff; color:#fff; padding:10px 20px; border-radius:20px; cursor:pointer;">MENU</button>
+        </div>
     </div>
+</div>
 
-    <!-- 非表示のファイル入力（読み込み用） -->
-    <input type="file" id="import-file-input" class="hidden" accept=".json" onchange="importDataFromFile(event)">
+<script>
+/**
+ * 簡易サウンドシンセサイザー
+ */
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+let audioCtx;
 
-    <script>
-        // --- 1. まずデータを定義 ---
-        const INITIAL_STUDENTS_TEXT = `1, 赤木 美咲, 女
-2, 伊藤 結衣, 女
-3, 上田 陽菜, 女
-4, 江口 葵, 女
-5, 太田 凛, 女
-6, 加藤 紬, 女
-7, 木村 杏奈, 女
-8, 工藤 桜, 女
-9, 佐々木 楓, 女
-10, 佐藤 菫, 女
-11, 鈴木 莉子, 女
-12, 高橋 咲良, 女
-13, 田中 萌, 女
-14, 中島 くるみ, 女
-15, 西村 栞, 女
-16, 長谷川 奈々, 女
-17, 林 遥, 女
-18, 藤田 詩織, 女
-19, 村上 愛, 女
-20, 山口 花, 女
-21, 安藤 健, 男
-22, 池田 翔, 男
-23, 石井 翼, 男
-24, 市川 蓮, 男
-25, 遠藤 湊, 男
-26, 岡田 樹, 男
-27, 小川 陸, 男
-28, 金子 大和, 男
-29, 小林 悠真, 男
-30, 近藤 瑛太, 男
-31, 斉藤 朝陽, 男
-32, 酒井 琉生, 男
-33, 坂本 湊斗, 男
-34, 清水 大翔, 男
-35, 菅原 悠人, 男
-36, 武井 颯太, 男
-37, 竹内 拓海, 男
-38, 中村 悠斗, 男
-39, 野口 翔太, 男
-40, 橋本 隼人, 男
-41, 長谷川 健太, 男
-42, 馬場 駿, 男
-43, 福田 亮太, 男
-44, 前田 雄大, 男
-45, 松本 太陽, 男
-46, 森 一真, 男
-47, 山崎 輝, 男
-48, 渡辺 拓己, 男`;
+function initAudio() {
+    if (!audioCtx) audioCtx = new AudioContext();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+}
 
-        // --- 2. 状態管理 ---
-        let state = {
-            mode: 'teacher', 
-            students: [],
-            rows: 8,
-            cols: 6,
-            seats: [], 
-            referenceSeats: [], 
-            lockedSeats: {}, 
-            seatAttributes: {}, 
-            importText: INITIAL_STUDENTS_TEXT,
-            revealState: {},
-            blackboardPosition: 'top',
-            isShuffling: false,
-            activeTool: 'CURSOR', 
-            swapSourceIndex: null, 
-            editingSeatIndex: null,
-            searchQuery: '',
-            showSaveMenu: false,
-            isRosterOpen: false, // デフォルトで閉じるに変更
-            isDataManagerOpen: false,
-            isBulkToolOpen: true,
-            isSoundEnabled: true,
-            isStudentControlsVisible: true,
-            isSidebarCollapsed: false,
-            avoidSameSeat: false,
-            avoidSamePartner: false,
-            animatingSwap: null 
+function playSound(type) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    const now = audioCtx.currentTime;
+
+    if (type === 'wall') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(100, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+        osc.start(now);
+        osc.stop(now + 0.1);
+    } 
+    else if (type === 'correct') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(500, now);
+        osc.frequency.linearRampToValueAtTime(1000, now + 0.1);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        osc.start(now);
+        osc.stop(now + 0.3);
+    }
+    else if (type === 'goal') {
+        const notes = [440, 554, 659, 880]; 
+        notes.forEach((freq, i) => {
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.connect(g);
+            g.connect(audioCtx.destination);
+            o.type = 'square';
+            o.frequency.value = freq;
+            g.gain.setValueAtTime(0.1, now + i * 0.08);
+            g.gain.exponentialRampToValueAtTime(0.01, now + i * 0.08 + 0.3);
+            o.start(now + i * 0.08);
+            o.stop(now + i * 0.08 + 0.3);
+        });
+    }
+    else if (type === 'speedup') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.linearRampToValueAtTime(600, now + 0.2);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        osc.start(now);
+        osc.stop(now + 0.2);
+    }
+    else if (type === 'bonus_win') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.linearRampToValueAtTime(1760, now + 0.2);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+        osc.start(now);
+        osc.stop(now + 0.4);
+    }
+    else if (type === 'bonus_wrong') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.linearRampToValueAtTime(100, now + 0.2);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        osc.start(now);
+        osc.stop(now + 0.2);
+    }
+}
+
+// 音声読み上げ関連の改良
+let availableVoices = [];
+
+function loadVoices() {
+    availableVoices = window.speechSynthesis.getVoices();
+}
+
+if ('speechSynthesis' in window) {
+    loadVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+}
+
+function speakWord(text) {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const uttr = new SpeechSynthesisUtterance(text);
+        
+        // 英語の声を明示的に探す
+        if (availableVoices.length === 0) loadVoices();
+        const enVoice = availableVoices.find(v => v.lang.includes('en-US')) || availableVoices.find(v => v.lang.includes('en'));
+        if (enVoice) {
+            uttr.voice = enVoice;
+        }
+        
+        uttr.lang = 'en-US';
+        uttr.rate = 1.0;
+        window.speechSynthesis.speak(uttr);
+    }
+}
+
+// ユーザーアクション時にダミー再生して権限を取得する
+function unlockAudioContext() {
+    if ('speechSynthesis' in window) {
+        const uttr = new SpeechSynthesisUtterance(''); // 無音
+        uttr.volume = 0;
+        window.speechSynthesis.speak(uttr);
+    }
+}
+
+/**
+ * データセット
+ */
+const RAW_WORD_LIST = [
+    { en: "happen to do", ja: "偶然…する" },
+    { en: "strongly", ja: "強く" },
+    { en: "tribe", ja: "種族, 民族" },
+    { en: "grade", ja: "学年" },
+    { en: "fit", ja: "合う" },
+    { en: "bully", ja: "いじめる" },
+    { en: "come true", ja: "実現する" },
+    { en: "ethnic", ja: "民族の" },
+    { en: "childhood", ja: "幼少期, 子どもの頃" },
+    { en: "violent", ja: "暴力的な" },
+    { en: "continent", ja: "大陸" },
+    { en: "avoid", ja: "避ける" },
+    { en: "might", ja: "…かもしれない" },
+    { en: "behave", ja: "振る舞う" },
+    { en: "make-up", ja: "化粧" },
+    { en: "attractive", ja: "魅力的な" },
+    { en: "think of A as B", ja: "AをBとしてとらえる" },
+    { en: "in addition", ja: "加えて, さらに" },
+    { en: "pass on to …", ja: "…に伝える" },
+    { en: "subject", ja: "被写体, 対象" },
+    { en: "Ethiopia", ja: "エチオピア" },
+    { en: "luckily", ja: "幸運にも" },
+    { en: "program", ja: "番組" },
+    { en: "expect", ja: "予期する, 期待する" },
+    { en: "Amazon", ja: "アマゾン川" },
+    { en: "region", ja: "地域" },
+    { en: "feature", ja: "特集する, 特徴づける" },
+    { en: "A as well as B", ja: "BだけでなくAも" }
+];
+
+const COLORS = {
+    bg: '#1a1a1a',
+    lines: '#444',
+    puck: '#fff',
+    p1: '#00d2ff',
+    p2: '#ff0055',
+    text: '#fff',
+    correct: '#00ff00',
+    bonusBg: 'rgba(0,0,0,0.85)'
+};
+
+class Game {
+    constructor() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        
+        this.width = window.innerWidth;
+        this.height = window.innerHeight;
+        
+        // ゲーム状態管理
+        this.state = 'START'; // START, PLAY, BONUS, GAMEOVER
+        this.score = { p1: 0, p2: 0 };
+        this.timeLeft = 60;
+        this.lastTime = 0;
+        
+        // 勝利数記録
+        this.winStats = { blue: 0, red: 0 };
+        this.loadStats();
+        
+        this.currentWord = null;
+        this.bonusOptions = [];
+        this.bonusWinner = null;
+        
+        this.goalSize = 250;
+        this.rallyCount = 0;
+
+        // パック
+        this.puck = {
+            x: this.width / 2, y: this.height / 2,
+            vx: 0, vy: 0,
+            radius: 30,
+            mass: 1,
+            flashTimer: 0
         };
 
-        // --- 保存・読込 ---
-        function saveToLocalStorage() {
-            try {
-                const dataToSave = {
-                    rows: state.rows, cols: state.cols, seats: state.seats,
-                    lockedSeats: state.lockedSeats, seatAttributes: state.seatAttributes,
-                    importText: state.importText, blackboardPosition: state.blackboardPosition,
-                    referenceSeats: state.referenceSeats,
-                    isDataManagerOpen: state.isDataManagerOpen,
-                    isBulkToolOpen: state.isBulkToolOpen,
-                    isRosterOpen: state.isRosterOpen
-                };
-                localStorage.setItem('sekigae_kun_data_v3', JSON.stringify(dataToSave));
-            } catch (e) {}
-        }
+        // プレイヤー
+        this.paddles = [
+            { x: 150, y: this.height / 2, radius: 40, orbitRadius: 65, angle: 0, color: COLORS.p1, targetX: 150, targetY: this.height / 2, satellites: [] },
+            { x: this.width - 150, y: this.height / 2, radius: 40, orbitRadius: 65, angle: Math.PI, color: COLORS.p2, targetX: this.width - 150, targetY: this.height / 2, satellites: [] }
+        ];
 
-        function loadFromLocalStorage() {
-            const saved = localStorage.getItem('sekigae_kun_data_v3');
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    Object.assign(state, parsed);
-                } catch (e) {}
+        window.addEventListener('resize', () => this.resize());
+        this.setupControls();
+        
+        // ボタンイベント
+        document.getElementById('start-btn').addEventListener('click', () => this.startGame());
+        document.getElementById('retry-btn').addEventListener('click', () => this.startGame());
+        document.getElementById('back-to-menu-btn').addEventListener('click', () => this.backToMenu());
+        document.getElementById('menu-return-btn').addEventListener('click', () => this.backToMenu());
+        
+        // 統計リセットボタン
+        document.getElementById('reset-stats-btn').addEventListener('click', () => {
+            if(confirm('勝利数をリセットしますか？')) {
+                this.resetStats();
             }
+        });
+
+        this.resize();
+        this.pickNewWord();
+        requestAnimationFrame(t => this.loop(t));
+    }
+
+    // --- 勝利数記録関連 ---
+    loadStats() {
+        const blue = localStorage.getItem('wordHockey_blueWins');
+        const red = localStorage.getItem('wordHockey_redWins');
+        if (blue) this.winStats.blue = parseInt(blue, 10);
+        if (red) this.winStats.red = parseInt(red, 10);
+        this.updateStatsDisplay();
+    }
+
+    saveStats() {
+        localStorage.setItem('wordHockey_blueWins', this.winStats.blue);
+        localStorage.setItem('wordHockey_redWins', this.winStats.red);
+        this.updateStatsDisplay();
+    }
+
+    resetStats() {
+        this.winStats = { blue: 0, red: 0 };
+        this.saveStats();
+    }
+
+    updateStatsDisplay() {
+        document.getElementById('wins-blue').textContent = this.winStats.blue;
+        document.getElementById('wins-red').textContent = this.winStats.red;
+    }
+    // -------------------
+
+    startGame() {
+        initAudio();
+        unlockAudioContext(); // 音声読み上げのアンロック
+        document.getElementById('start-screen').style.display = 'none';
+        document.getElementById('gameover-screen').style.display = 'none';
+        document.getElementById('back-to-menu-btn').style.display = 'block'; // メニューボタン表示
+        
+        this.state = 'PLAY';
+        this.score = { p1: 0, p2: 0 };
+        this.timeLeft = 60;
+        this.rallyCount = 0;
+        this.lastTime = performance.now();
+        
+        this.resetPuck(true);
+        
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(e => console.log(e));
         }
+    }
 
-        // --- 動作に必要な関数の定義 ---
-        window.updateRows = (val) => {
-            if (val < 1) return;
-            state.rows = val;
-            initSeats();
-        };
+    backToMenu() {
+        this.state = 'START';
+        document.getElementById('start-screen').style.display = 'block';
+        document.getElementById('gameover-screen').style.display = 'none';
+        document.getElementById('back-to-menu-btn').style.display = 'none';
+        this.resize(); // パドル位置リセットなど
+    }
 
-        window.updateCols = (val) => {
-            if (val < 1) return;
-            state.cols = val;
-            initSeats();
-        };
+    endGame() {
+        this.state = 'GAMEOVER';
+        document.getElementById('back-to-menu-btn').style.display = 'none';
 
-        window.updateImportText = (val) => {
-            state.importText = val;
-            saveToLocalStorage();
-        };
-
-        window.setAsReference = () => {
-            state.referenceSeats = [...state.seats];
-            saveToLocalStorage();
-            alert("現在の座席を「前回の席」として記録しました。\n次回席替え時に「前回と同じ席を避ける」などが有効になります。");
-            render();
-        };
-
-        window.exportDataToFile = () => {
-            const data = { ...state, students: undefined, revealState: {} };
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `席替えくん設定_${new Date().toLocaleDateString().replace(/\//g,'-')}.json`;
-            a.click();
-            // メニューを閉じる
-            state.showSaveMenu = false;
-            render();
-        };
-
-        window.triggerFilePicker = () => document.getElementById('import-file-input').click();
-
-        window.importDataFromFile = (event) => {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const parsed = JSON.parse(e.target.result);
-                    Object.assign(state, parsed);
-                    parseStudents(state.importText);
-                    initSeats();
-                    alert("設定データを読み込みました。");
-                } catch (err) { alert("ファイル形式が正しくありません。"); }
-            };
-            reader.readAsText(file);
-            event.target.value = '';
-        };
-
-        // --- クラッカーアニメーション ---
-        function createConfetti() {
-            const colors = ['#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39', '#ffeb3b', '#ffc107', '#ff9800', '#ff5722'];
-            for (let i = 0; i < 100; i++) {
-                const confetti = document.createElement('div');
-                confetti.className = 'confetti';
-                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
-                confetti.style.left = Math.random() * 100 + 'vw';
-                confetti.style.top = '-10px';
-                confetti.style.transform = `rotate(${Math.random() * 360}deg)`;
-                document.body.appendChild(confetti);
-
-                const animation = confetti.animate([
-                    { transform: `translate3d(0, 0, 0) rotate(0deg)`, opacity: 1 },
-                    { transform: `translate3d(${(Math.random() - 0.5) * 200}px, 100vh, 0) rotate(${Math.random() * 360}deg)`, opacity: 0 }
-                ], {
-                    duration: 2000 + Math.random() * 3000,
-                    easing: 'cubic-bezier(0, .9, .57, 1)',
-                    delay: Math.random() * 500
-                });
-
-                animation.onfinish = () => confetti.remove();
-            }
+        const winText = document.getElementById('winner-text');
+        const scoreText = document.getElementById('final-score');
+        
+        if (this.score.p1 > this.score.p2) {
+            winText.textContent = "BLUE WINS!";
+            winText.style.color = COLORS.p1;
+            this.winStats.blue++;
+        } else if (this.score.p2 > this.score.p1) {
+            winText.textContent = "RED WINS!";
+            winText.style.color = COLORS.p2;
+            this.winStats.red++;
+        } else {
+            winText.textContent = "DRAW!";
+            winText.style.color = "#fff";
         }
+        this.saveStats(); // 記録保存
+        
+        scoreText.textContent = `${this.score.p1} - ${this.score.p2}`;
+        document.getElementById('gameover-screen').style.display = 'block';
+    }
 
-        // --- 計算ロジック ---
-        function getVisualSeatNumber(i) {
-            const col = i % state.cols;
-            const row = Math.floor(i / state.cols);
-            return (state.cols - 1 - col) * state.rows + (row + 1);
+    resize() {
+        this.width = window.innerWidth;
+        this.height = window.innerHeight;
+        this.canvas.width = this.width;
+        this.canvas.height = this.height;
+        this.goalSize = Math.max(150, this.height * 0.3);
+
+        if (this.state === 'START' || this.state === 'GAMEOVER') {
+            this.paddles[0].x = this.width * 0.15;
+            this.paddles[0].y = this.height / 2;
+            this.paddles[1].x = this.width * 0.85;
+            this.paddles[1].y = this.height / 2;
         }
+    }
 
-        function getPartners(i, seatList) {
-            if (!seatList || seatList.length === 0) return [];
-            const col = i % state.cols;
-            const row = Math.floor(i / state.cols);
-            const res = [];
-            if (col > 0) res.push(seatList[row * state.cols + (col - 1)]);
-            if (col < state.cols - 1) res.push(seatList[row * state.cols + (col + 1)]);
-            return res.filter(id => id);
-        }
+    pickNewWord() {
+        const target = RAW_WORD_LIST[Math.floor(Math.random() * RAW_WORD_LIST.length)];
+        const otherWords = RAW_WORD_LIST.filter(w => w.en !== target.en);
+        const shuffled = [...otherWords].sort(() => 0.5 - Math.random());
+        const dummies = shuffled.slice(0, 2).map(w => w.ja);
+        
+        this.currentWord = { en: target.en, ja: target.ja, dummies: dummies };
+        
+        this.paddles.forEach(p => {
+            let choices = [
+                { text: target.ja, isCorrect: true },
+                { text: dummies[0], isCorrect: false },
+                { text: dummies[1], isCorrect: false }
+            ];
+            choices.sort(() => 0.5 - Math.random());
+            p.satellites = choices.map((c, i) => ({
+                ...c,
+                offsetAngle: i * (Math.PI * 2 / 3)
+            }));
+        });
+    }
 
-        // --- 音声 ---
-        let audioCtx = null;
-        function initAudio() { if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} } }
-        function playTone(freq, type, duration, startTime = 0, vol = 0.1) {
-            if (!audioCtx || !state.isSoundEnabled) return;
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            try {
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.type = type;
-                osc.frequency.setValueAtTime(freq, audioCtx.currentTime + startTime);
-                gain.gain.setValueAtTime(0, audioCtx.currentTime + startTime);
-                gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + startTime + 0.01);
-                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
-                osc.connect(gain); gain.connect(audioCtx.destination);
-                osc.start(audioCtx.currentTime + startTime); osc.stop(audioCtx.currentTime + startTime + duration);
-            } catch(e){}
-        }
-        function playFlip() { initAudio(); playTone(1000 + Math.random() * 200, 'sine', 0.1, 0, 0.08); }
-        function playDrumroll() { initAudio(); if (!state.isSoundEnabled) return; for (let i = 0; i < 12; i++) { playTone(150 + (i * 25), 'triangle', 0.1, i * 0.10, 0.15); } }
-        function playTada() { initAudio(); if (!state.isSoundEnabled) return; [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((freq, i) => { playTone(freq, 'triangle', 1.8, i * 0.06, 0.15); }); }
+    setupBonusRound() {
+        this.state = 'BONUS';
+        this.bonusWinner = null;
+        
+        // ボーナス選択肢の生成 (左側P1用、右側P2用)
+        this.bonusOptions = [];
+        const btnW = 200;
+        const btnH = 60;
+        const gap = 20;
+        
+        let choices = [
+            { text: this.currentWord.ja, isCorrect: true },
+            { text: this.currentWord.dummies[0], isCorrect: false },
+            { text: this.currentWord.dummies[1], isCorrect: false }
+        ];
 
-        // --- メインロジック ---
-        function parseStudents(text) {
-            if (!text) return;
-            const lines = text.trim().split('\n');
-            state.students = lines.map((line, i) => {
-                const parts = line.split(/[,\t]/).map(p => p.trim()).filter(p => p);
-                let num = i + 1, name = `生徒${i+1}`, gender = 'M';
-                if (parts.length >= 3) {
-                    if (!isNaN(parseInt(parts[0]))) { num = parseInt(parts[0]); name = parts[1]; gender = (parts[2].includes('女') || parts[2].toLowerCase().includes('f')) ? 'F' : 'M'; }
-                    else { name = parts[0]; gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M'; }
-                } else if (parts.length === 2) {
-                    if (!isNaN(parseInt(parts[0]))) { num = parseInt(parts[0]); name = parts[1]; }
-                    else { name = parts[0]; gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M'; }
-                } else if (parts.length === 1) { name = parts[0]; }
-                return { id: `s-${i}`, number: num, name, gender };
+        // 中央エリアを避けるため、Y座標を調整
+        // 上部に結果表示、中央に英単語、下部にボタンという配置にする
+        
+        const startY = this.height / 2 + 50; // 中央より下からボタン開始
+
+        // P1用 (左側)
+        let p1Choices = [...choices].sort(() => 0.5 - Math.random());
+        p1Choices.forEach((c, i) => {
+            this.bonusOptions.push({
+                player: 'p1',
+                text: c.text,
+                isCorrect: c.isCorrect,
+                x: this.width * 0.15 - btnW/2,
+                y: startY + i * (btnH + gap), 
+                w: btnW, h: btnH,
+                active: true
             });
-        }
+        });
 
-        function initSeats() {
-            const newSize = state.rows * state.cols;
-            const newSeats = new Array(newSize).fill(null);
-            for (let i = 0; i < Math.min(state.seats.length, newSize); i++) newSeats[i] = state.seats[i];
-            state.seats = newSeats;
-            saveToLocalStorage();
-            render();
-        }
+        // P2用 (右側)
+        let p2Choices = [...choices].sort(() => 0.5 - Math.random());
+        p2Choices.forEach((c, i) => {
+            this.bonusOptions.push({
+                player: 'p2',
+                text: c.text,
+                isCorrect: c.isCorrect,
+                x: this.width * 0.85 - btnW/2,
+                y: startY + i * (btnH + gap),
+                w: btnW, h: btnH,
+                active: true
+            });
+        });
 
-        function shuffleSeatsLogic() {
-            let resultSeats = [...state.seats];
-            const lockedIds = new Set();
-            for (let i = 0; i < resultSeats.length; i++) {
-                if (state.lockedSeats[i] && resultSeats[i]) lockedIds.add(resultSeats[i]);
-                else resultSeats[i] = null;
+        speakWord(this.currentWord.en);
+    }
+
+    resetPuck(newGame = false) {
+        this.puck.x = this.width / 2;
+        this.puck.y = this.height / 2;
+        this.puck.vx = 0;
+        this.puck.vy = 0;
+        this.rallyCount = 0;
+
+        if (!newGame) this.pickNewWord();
+        else this.pickNewWord();
+
+        setTimeout(() => {
+            if (this.state !== 'PLAY') return;
+            const speed = 3.2; 
+            const finalDir = (Math.random() > 0.5 ? 1 : -1);
+            this.puck.vx = finalDir * speed;
+            this.puck.vy = (Math.random() - 0.5) * speed;
+        }, 1000);
+    }
+
+    setupControls() {
+        const handlePaddleMove = (x, y, isLeft) => {
+            if (this.state !== 'PLAY') return; 
+            
+            const margin = this.paddles[0].orbitRadius + 10;
+            // iPadのホームバー対策で下部を広めに空ける（誤操作防止）
+            const bottomSafeMargin = margin + 30; 
+
+            const centerLine = this.width / 2;
+            if (isLeft) {
+                const cx = Math.max(margin, Math.min(x, centerLine - margin));
+                const cy = Math.max(margin, Math.min(y, this.height - bottomSafeMargin));
+                this.paddles[0].targetX = cx;
+                this.paddles[0].targetY = cy;
+            } else {
+                const cx = Math.max(centerLine + margin, Math.min(x, this.width - margin));
+                const cy = Math.max(margin, Math.min(y, this.height - bottomSafeMargin));
+                this.paddles[1].targetX = cx;
+                this.paddles[1].targetY = cy;
             }
+        };
 
-            let pool = state.students.filter(s => !lockedIds.has(s.id));
-            let attempts = 0;
-            const hasRef = state.referenceSeats && state.referenceSeats.length === state.seats.length;
+        const checkBonusClick = (x, y) => {
+            if (this.state !== 'BONUS') return;
 
-            while (attempts < 100) {
-                attempts++;
-                let tempSeats = [...resultSeats];
-                let boys = pool.filter(s => s.gender === 'M').sort(() => Math.random() - 0.5);
-                let girls = pool.filter(s => s.gender === 'F').sort(() => Math.random() - 0.5);
+            for (let btn of this.bonusOptions) {
+                if (!btn.active) continue;
                 
-                for (let i = 0; i < tempSeats.length; i++) {
-                    if (state.lockedSeats[i]) continue;
-                    const attr = state.seatAttributes[i];
-                    if (attr === 'M' && boys.length > 0) tempSeats[i] = boys.pop().id;
-                    else if (attr === 'F' && girls.length > 0) tempSeats[i] = girls.pop().id;
-                }
-                let remaining = [...boys, ...girls].sort(() => Math.random() - 0.5);
-                for (let i = 0; i < tempSeats.length; i++) {
-                    if (!tempSeats[i] && state.seatAttributes[i] !== 'EMPTY' && remaining.length > 0) tempSeats[i] = remaining.pop().id;
-                }
-
-                if (hasRef) {
-                    let fail = false;
-                    if (state.avoidSameSeat) {
-                        for (let i = 0; i < tempSeats.length; i++) {
-                            if (state.lockedSeats[i]) continue;
-                            if (tempSeats[i] && tempSeats[i] === state.referenceSeats[i]) { fail = true; break; }
-                        }
-                    }
-                    if (!fail && state.avoidSamePartner) {
-                        for (let i = 0; i < tempSeats.length; i++) {
-                            if (state.lockedSeats[i]) continue;
-                            const sid = tempSeats[i]; if (!sid) continue;
-                            const currentP = getPartners(i, tempSeats);
-                            const oldP = getPartners(i, state.referenceSeats);
-                            if (currentP.some(p => oldP.includes(p))) { fail = true; break; }
-                        }
-                    }
-                    if (fail && attempts < 100) continue;
-                }
-                resultSeats = tempSeats;
-                break;
-            }
-            state.seats = resultSeats;
-            state.revealState = {};
-            saveToLocalStorage();
-            render();
-        }
-
-        function shuffleSeatsWithAnimation() {
-            if (state.isShuffling) return;
-            state.isShuffling = true;
-            playDrumroll();
-            render();
-            setTimeout(() => {
-                shuffleSeatsLogic();
-                state.isShuffling = false;
-                playTada();
-                createConfetti(); 
-                render();
-            }, 1500);
-        }
-
-        // --- ハンドラ登録 ---
-        window.setMode = (m) => { state.mode = m; render(); };
-        window.toggleSound = () => { state.isSoundEnabled = !state.isSoundEnabled; render(); };
-        window.setActiveTool = (t) => { state.activeTool = t; state.swapSourceIndex = null; render(); };
-        window.toggleRoster = () => { state.isRosterOpen = !state.isRosterOpen; saveToLocalStorage(); render(); };
-        window.toggleDataManager = () => { state.isDataManagerOpen = !state.isDataManagerOpen; saveToLocalStorage(); render(); };
-        window.toggleBulkTool = () => { state.isBulkToolOpen = !state.isBulkToolOpen; saveToLocalStorage(); render(); };
-        window.runImport = () => { parseStudents(state.importText); initSeats(); };
-        window.clearRosterText = () => { state.importText = ''; render(); };
-        window.toggleBlackboard = () => { state.blackboardPosition = state.blackboardPosition === 'top' ? 'bottom' : 'top'; saveToLocalStorage(); render(); };
-        window.clearSeats = () => { state.seats = state.seats.map((id, i) => state.lockedSeats[i] ? id : null); state.revealState = {}; saveToLocalStorage(); render(); };
-        window.toggleSidebar = () => { state.isSidebarCollapsed = !state.isSidebarCollapsed; render(); };
-        window.toggleConstraint = (k) => { state[k] = !state[k]; render(); };
-        window.toggleControls = (v) => { state.isStudentControlsVisible = v; render(); };
-        window.toggleSaveMenu = () => { state.showSaveMenu = !state.showSaveMenu; render(); };
-
-        window.handleSeatClick = (i) => {
-            if (state.activeTool === 'CURSOR') openSeatModal(i);
-            else if (state.activeTool === 'EMPTY') { state.seatAttributes[i] = state.seatAttributes[i] === 'EMPTY' ? null : 'EMPTY'; if(state.seatAttributes[i]){state.seats[i]=null; state.lockedSeats[i]=false;} saveToLocalStorage(); render(); }
-            else if (state.activeTool === 'M') { state.seatAttributes[i] = state.seatAttributes[i] === 'M' ? null : 'M'; state.lockedSeats[i]=false; saveToLocalStorage(); render(); }
-            else if (state.activeTool === 'F') { state.seatAttributes[i] = state.seatAttributes[i] === 'F' ? null : 'F'; state.lockedSeats[i]=false; saveToLocalStorage(); render(); }
-            else if (state.activeTool === 'SWAP') {
-                if (state.swapSourceIndex === null) {
-                    state.swapSourceIndex = i;
-                    render(); 
-                } else {
-                    const fromIdx = state.swapSourceIndex;
-                    const toIdx = i;
-                    const fromEl = document.querySelector(`[data-seat-index="${fromIdx}"]`);
-                    const toEl = document.querySelector(`[data-seat-index="${toIdx}"]`);
-                    if (fromEl && toEl) {
-                        const fromRect = fromEl.getBoundingClientRect();
-                        const toRect = toEl.getBoundingClientRect();
-                        state.animatingSwap = {
-                            from: fromIdx,
-                            to: toIdx,
-                            dx: toRect.left - fromRect.left,
-                            dy: toRect.top - fromRect.top
-                        };
-                        render(); 
-                        setTimeout(() => {
-                            const temp = state.seats[fromIdx];
-                            state.seats[fromIdx] = state.seats[toIdx];
-                            state.seats[toIdx] = temp;
-                            state.swapSourceIndex = null;
-                            state.animatingSwap = null;
-                            saveToLocalStorage(); 
-                            render();
-                        }, 500);
-                    } else {
-                        const temp = state.seats[fromIdx];
-                        state.seats[fromIdx] = state.seats[toIdx];
-                        state.seats[toIdx] = temp;
-                        state.swapSourceIndex = null;
-                        saveToLocalStorage(); render();
-                    }
-                }
-            }
-        };
-
-        window.studentToggleCard = (i) => { if (state.isShuffling) return; playFlip(); state.revealState[i] = !state.revealState[i]; render(); };
-        window.revealAll = () => { playTada(); createConfetti(); state.seats.forEach((_, i) => state.revealState[i] = true); render(); };
-        window.drumRollReveal = () => {
-            playDrumroll(); state.revealState = {}; render();
-            const ids = state.seats.map((_, i) => i).sort(() => Math.random() - 0.5);
-            ids.forEach((idx, i) => setTimeout(() => { 
-                state.revealState[idx] = true; 
-                playFlip(); 
-                render(); 
-                if (i === ids.length - 1) {
-                    setTimeout(() => {
-                        playTada();
-                        createConfetti();
-                    }, 500);
-                }
-            }, i * 300 + 1000));
-        };
-        window.hideAll = () => { state.revealState = {}; render(); };
-
-        function openSeatModal(i) { state.editingSeatIndex = i; state.searchQuery = ''; renderModal(); document.getElementById('modal-overlay').classList.remove('hidden'); }
-        window.closeModal = () => { state.editingSeatIndex = null; document.getElementById('modal-overlay').classList.add('hidden'); };
-        window.updateSearchQuery = (v) => { state.searchQuery = v; renderModal(); };
-        window.editSeat = (act, p) => {
-            const i = state.editingSeatIndex;
-            if (act === 'SET_EMPTY') { state.seats[i] = null; state.lockedSeats[i] = false; state.seatAttributes[i] = 'EMPTY'; }
-            else if (act === 'SET_ATTRIBUTE') { state.seatAttributes[i] = p; state.lockedSeats[i] = false; if (p) state.seats[i] = null; }
-            else if (act === 'SET_STUDENT') {
-                const prev = state.seats.indexOf(p); if (prev !== -1) { state.seats[prev] = null; state.lockedSeats[prev] = false; }
-                state.seats[i] = p; state.lockedSeats[i] = true; state.seatAttributes[i] = null;
-            }
-            closeModal(); saveToLocalStorage(); render();
-        };
-
-        function openSavePreview(dataUrl) {
-            const overlay = document.getElementById('save-preview-overlay');
-            const img = document.getElementById('save-preview-img');
-            const btn = document.getElementById('direct-download-btn');
-            img.src = dataUrl;
-            overlay.classList.remove('hidden');
-            btn.onclick = () => {
-                const a = document.createElement('a');
-                a.download = "座席表.png";
-                a.href = dataUrl;
-                a.click();
-            };
-            lucide.createIcons();
-        }
-        window.closeSavePreview = () => {
-            document.getElementById('save-preview-overlay').classList.add('hidden');
-        };
-
-        window.prepareAndCapture = async (type) => {
-            state.showSaveMenu = false; render();
-            const el = document.getElementById('capture-container');
-            if (!el) return;
-
-            // html2canvas実行前にスクロール位置をリセット（iOSバグ対策）
-            window.scrollTo(0, 0);
-
-            try {
-                // scaleを2に調整（iPadのメモリ制限対策）
-                const canvas = await html2canvas(el, {
-                    scale: 2, 
-                    backgroundColor: '#ffffff', 
-                    useCORS: true,
-                    logging: false,
-                    onclone: (cloned) => {
-                        const target = cloned.getElementById('capture-container');
-                        if (target) {
-                            target.style.width = '1200px'; 
-                            target.style.height = 'auto';
-                            target.style.padding = '40px';
-                            const grid = target.querySelector('.seat-grid');
-                            if (grid) {
-                                grid.style.display = 'grid';
-                                grid.style.gridTemplateColumns = `repeat(${state.cols}, 1fr)`;
-                                grid.style.gridTemplateRows = `repeat(${state.rows}, auto)`; 
-                                grid.style.gap = '10px';
-                                grid.style.width = '100%';
-                            }
-                            const cells = target.querySelectorAll('.seat-cell');
-                            cells.forEach(cell => {
-                                cell.style.height = '80px';
-                                cell.style.display = 'flex';
-                                cell.style.flexDirection = 'column';
-                                cell.style.alignItems = 'center';
-                                cell.style.justifyContent = 'center';
-                                const nameDiv = cell.querySelector('.student-name');
-                                if (nameDiv) { 
-                                    nameDiv.style.fontSize = '20px'; 
-                                    nameDiv.style.lineHeight = '1.2'; 
-                                    nameDiv.classList.remove('line-clamp-2'); 
-                                    nameDiv.style.padding = '0 5px';
-                                    nameDiv.style.wordBreak = 'break-all';
-                                }
-                            });
-                        }
-                    }
-                });
-
-                if (type === 'png') {
-                    const dataUrl = canvas.toDataURL('image/png');
-                    openSavePreview(dataUrl);
-                } else {
-                    const imgData = canvas.toDataURL('image/png', 1.0);
-                    const pdf = new jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-                    
-                    const pageWidth = pdf.internal.pageSize.getWidth();
-                    const pageHeight = pdf.internal.pageSize.getHeight();
-                    const margin = 10;
-                    const maxW = pageWidth - (margin * 2);
-                    const maxH = pageHeight - (margin * 2);
-                    
-                    // 画像の比率を計算してA4内に収める
-                    const imgW = canvas.width;
-                    const imgH = canvas.height;
-                    const ratio = imgW / imgH;
-                    
-                    let finalW = maxW;
-                    let finalH = finalW / ratio;
-                    
-                    // 高さがはみ出す場合は高さ基準でリサイズ
-                    if (finalH > maxH) {
-                        finalH = maxH;
-                        finalW = finalH * ratio;
-                    }
-                    
-                    const x = (pageWidth - finalW) / 2;
-                    const y = (pageHeight - finalH) / 2;
-
-                    pdf.addImage(imgData, 'PNG', x, y, finalW, finalH);
-                    pdf.save('座席表.pdf');
-                }
-            } catch (e) { 
-                console.error(e);
-                alert("保存中にエラーが発生しました。"); 
-            }
-        };
-
-        function getStudent(id) { return state.students.find(s => s.id === id); }
-
-        function renderBlackboard(pos) {
-            const chalkPos = pos === 'top' ? 'bottom-1' : 'top-1';
-            return `<div class="w-[70%] h-14 bg-[#1a472a] border-y-4 border-[#5d4037] shadow-xl relative my-4 flex items-center justify-center overflow-hidden rounded-sm flex-shrink-0 text-white/20 font-bold tracking-widest text-xs select-none"><div class="absolute ${chalkPos} right-4 w-8 h-1.5 bg-white/50 rounded-full rotate-1 shadow-sm"></div></div>`;
-        }
-
-        function render() {
-            const app = document.getElementById('app');
-            if (state.mode === 'teacher') renderTeacher(app);
-            else renderStudent(app);
-            lucide.createIcons();
-        }
-
-        function renderTeacher(container) {
-            const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
-            if (state.blackboardPosition === 'bottom') displayIndices.reverse();
-
-            const header = `
-                <header class="w-full h-14 bg-white border-b px-4 flex justify-between items-center shadow-sm shrink-0 z-30">
-                    <h1 class="font-bold text-gray-700 text-lg">席替えくん</h1>
-                    <button onclick="setMode('student')" class="bg-teal-600 text-white px-3 py-1.5 rounded font-bold text-xs flex items-center gap-1 hover:bg-teal-700 transition-colors"><i data-lucide="monitor" class="w-4 h-4"></i> 生徒モード</button>
-                </header>`;
-
-            const sidebarWidth = state.isSidebarCollapsed ? 'w-16' : 'w-64';
-            const sidebar = `
-                <aside class="${sidebarWidth} bg-white border-r h-full flex flex-col p-2 gap-3 transition-all duration-300 overflow-y-auto no-scrollbar shrink-0">
-                    <button onclick="toggleSidebar()" class="self-end text-gray-400 hover:text-gray-600 p-1"><i data-lucide="${state.isSidebarCollapsed?'chevron-right':'chevron-left'}"></i></button>
-                    <button onclick="shuffleSeatsWithAnimation()" class="bg-indigo-600 text-white p-2 rounded font-bold text-xs flex items-center justify-center gap-2 shadow-sm hover:bg-indigo-700 transition-colors"><i data-lucide="shuffle" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'席替え実行'}</button>
-                    <button onclick="clearSeats()" class="bg-red-50 text-red-600 p-2 rounded font-bold text-xs border border-red-100 flex items-center justify-center gap-2 hover:bg-red-100 transition-colors"><i data-lucide="eraser" class="w-4 h-4"></i> ${state.isSidebarCollapsed?'':'クリア'}</button>
-                    
-                    <div class="${state.isSidebarCollapsed?'hidden':''}">
-                        <div class="flex gap-1">
-                            <!-- ① 保存ボタン（メニュー付き） -->
-                            <div class="relative flex-1">
-                                <button onclick="toggleSaveMenu()" class="w-full bg-indigo-50 border border-indigo-100 text-indigo-600 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-indigo-100 transition-colors"><i data-lucide="download" class="w-3 h-3"></i>保存</button>
-                                ${state.showSaveMenu ? `
-                                <div class="absolute top-full left-0 w-[220%] bg-white border shadow-xl rounded-md z-50 py-1 mt-1 border-gray-200">
-                                    <div class="px-2 py-1 text-[10px] text-gray-400 font-bold">出力形式を選択</div>
-                                    <button onclick="prepareAndCapture('png')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px] flex items-center gap-2 text-gray-700"><i data-lucide="image" class="w-3 h-3 text-indigo-500"></i>画像 (.png)</button>
-                                    <button onclick="prepareAndCapture('pdf')" class="w-full p-2 text-left hover:bg-gray-50 text-[10px] flex items-center gap-2 text-gray-700"><i data-lucide="file-text" class="w-3 h-3 text-red-500"></i>PDF (.pdf)</button>
-                                    <div class="border-t my-1"></div>
-                                    <button onclick="exportDataToFile()" class="w-full p-2 text-left hover:bg-gray-50 text-[10px] flex items-center gap-2 text-gray-700"><i data-lucide="save" class="w-3 h-3 text-green-600"></i>ファイルで保存 (設定)</button>
-                                </div>` : ''}
-                            </div>
-                            <!-- ② 読込ボタン -->
-                            <button onclick="triggerFilePicker()" class="flex-1 bg-gray-50 border border-gray-200 text-gray-600 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-gray-100 transition-colors"><i data-lucide="folder-open" class="w-3 h-3"></i>読込</button>
-                        </div>
+                if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+                    if (btn.isCorrect) {
+                        playSound('bonus_win');
+                        this.bonusWinner = btn.player;
+                        this.score[btn.player]++; 
                         
-                        <!-- ③ 前回として記録ボタン -->
-                        <button onclick="setAsReference()" class="w-full mt-2 bg-green-50 border border-green-100 text-green-700 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-green-100 transition-colors"><i data-lucide="history" class="w-3 h-3"></i>現在の座席を前回として記録</button>
+                        setTimeout(() => {
+                            if (this.state === 'BONUS') { // 画面遷移してなければ
+                                this.state = 'PLAY';
+                                this.resetPuck();
+                            }
+                        }, 1500);
+                        
+                        this.bonusOptions.forEach(b => b.active = false);
+                    } else {
+                        playSound('bonus_wrong');
+                        btn.active = false; 
+                    }
+                    return; 
+                }
+            }
+        };
 
-                        <section class="bg-indigo-50 rounded border border-indigo-100 mt-4 overflow-hidden">
-                            <button onclick="toggleBulkTool()" class="w-full p-2 flex justify-between items-center text-indigo-400 hover:bg-indigo-100 transition-colors">
-                                <span class="font-bold text-[10px] uppercase">座席設定ツール</span>
-                                <i data-lucide="${state.isBulkToolOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i>
-                            </button>
-                            ${state.isBulkToolOpen ? `
-                            <div class="p-2 pt-0">
-                                <div class="grid grid-cols-2 gap-1">
-                                    <button onclick="setActiveTool('CURSOR')" class="p-1 rounded text-[10px] border transition-all ${state.activeTool==='CURSOR'?'bg-white shadow text-indigo-700 border-indigo-200':'text-indigo-400 border-transparent'}">選択</button>
-                                    <button onclick="setActiveTool('EMPTY')" class="p-1 rounded text-[10px] border transition-all ${state.activeTool==='EMPTY'?'bg-gray-700 text-white border-gray-700':'text-indigo-400 border-transparent'}">空席</button>
-                                    <button onclick="setActiveTool('M')" class="p-1 rounded text-[10px] border transition-all ${state.activeTool==='M'?'bg-blue-500 text-white border-blue-500':'text-indigo-400 border-transparent'}">♂ 男子</button>
-                                    <button onclick="setActiveTool('F')" class="p-1 rounded text-[10px] border transition-all ${state.activeTool==='F'?'bg-pink-500 text-white border-pink-500':'text-indigo-400 border-transparent'}">♀ 女子</button>
-                                </div>
-                                <button onclick="setActiveTool('SWAP')" class="w-full mt-1 p-1 rounded text-[10px] border transition-all ${state.activeTool==='SWAP'?'bg-orange-500 text-white border-orange-500':'text-indigo-400 border-transparent'}">席の入れ替え</button>
-                            </div>` : ''}
-                        </section>
+        const handleInput = (e) => {
+            e.preventDefault();
+            const touches = e.touches || [{ clientX: e.clientX, clientY: e.clientY }];
+            
+            if (e.type === 'touchstart' || e.type === 'mousedown') {
+                for (let i = 0; i < touches.length; i++) {
+                    const t = touches[i];
+                    checkBonusClick(t.clientX, t.clientY);
+                }
+            }
 
-                        <section class="border rounded text-[11px] mt-4 overflow-hidden bg-white">
-                            <button onclick="toggleRoster()" class="w-full p-2 flex justify-between items-center text-gray-500 hover:bg-gray-50 transition-colors">
-                                <span class="font-bold uppercase text-[10px]">名簿編集</span>
-                                <i data-lucide="${state.isRosterOpen?'chevron-down':'chevron-right'}" class="w-3 h-3"></i>
-                            </button>
-                            ${state.isRosterOpen ? `
-                            <div class="p-2 pt-0">
-                                <textarea oninput="updateImportText(this.value)" class="w-full h-32 mt-1 p-1 border rounded text-[10px] font-mono no-scrollbar focus:ring-1 focus:ring-indigo-300 outline-none">${state.importText}</textarea>
-                                <div class="flex gap-1 mt-1">
-                                    <button onclick="runImport()" class="flex-1 bg-gray-100 py-1 rounded font-bold text-[10px] hover:bg-gray-200">更新</button>
-                                    <button onclick="clearRosterText()" class="flex-1 bg-red-50 text-red-600 py-1 rounded font-bold text-[10px] border border-red-100 hover:bg-red-100">クリア</button>
-                                </div>
-                            </div>` : ''}
-                        </section>
+            for (let i = 0; i < touches.length; i++) {
+                const t = touches[i];
+                const isLeft = t.clientX < this.width / 2;
+                handlePaddleMove(t.clientX, t.clientY, isLeft);
+            }
+        };
 
-                        <div class="text-[11px] space-y-2 mt-4 bg-gray-50 p-2 rounded">
-                            <div class="flex items-center justify-between gap-1 text-gray-600">
-                                <div class="flex items-center gap-1">
-                                    <span class="font-bold">横</span>
-                                    <button onclick="updateCols(${state.cols-1})" class="bg-white border w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100">-</button>
-                                    <span class="w-3 text-center">${state.cols}</span>
-                                    <button onclick="updateCols(${state.cols+1})" class="bg-white border w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100">+</button>
-                                </div>
-                                <div class="w-px h-4 bg-gray-300 mx-0.5"></div>
-                                <div class="flex items-center gap-1">
-                                    <span class="font-bold">縦</span>
-                                    <button onclick="updateRows(${state.rows-1})" class="bg-white border w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100">-</button>
-                                    <span class="w-3 text-center">${state.rows}</span>
-                                    <button onclick="updateRows(${state.rows+1})" class="bg-white border w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100">+</button>
-                                </div>
-                            </div>
-                            
-                            <button onclick="toggleBlackboard()" class="w-full bg-white border py-1 rounded text-gray-500 mt-2 text-[10px] hover:bg-gray-50">黒板の上下を切り替え</button>
-                            <div class="mt-4 space-y-2 border-t pt-2">
-                                <label class="flex items-center gap-2 text-[10px] cursor-pointer text-gray-600"><input type="checkbox" ${state.avoidSameSeat?'checked':''} onchange="toggleConstraint('avoidSameSeat')" class="rounded"> 前回と同じ席を避ける</label>
-                                <label class="flex items-center gap-2 text-[10px] cursor-pointer text-gray-600"><input type="checkbox" ${state.avoidSamePartner?'checked':''} onchange="toggleConstraint('avoidSamePartner')" class="rounded"> 前回と同じパートナーを避ける</label>
-                            </div>
-                        </div>
-                    </div>
-                </aside>`;
+        this.canvas.addEventListener('touchmove', handleInput, { passive: false });
+        this.canvas.addEventListener('touchstart', handleInput, { passive: false });
+        this.canvas.addEventListener('mousedown', handleInput);
+        this.canvas.addEventListener('mousemove', (e) => {
+            if(e.buttons > 0) handleInput(e);
+        });
+    }
 
-            let cellsHtml = '';
-            displayIndices.forEach(i => {
-                const sId = state.seats[i];
-                const student = getStudent(sId);
-                const attr = state.seatAttributes[i];
-                const isLocked = state.lockedSeats[i];
-                const isSwapping = state.activeTool === 'SWAP' && state.swapSourceIndex === i;
+    update(dt) {
+        if (this.state === 'GAMEOVER' || this.state === 'START') return;
 
-                let bgColor = 'bg-gray-50';
-                let ring = isSwapping ? 'border-2 border-orange-400 z-10' : 'border-gray-300';
-                
-                if (student) bgColor = student.gender === 'M' ? 'bg-blue-100' : 'bg-pink-100';
-                else if (attr === 'EMPTY') bgColor = 'bg-gray-200';
-                else if (attr === 'M') bgColor = 'bg-blue-50 border-dashed border-blue-300';
-                else if (attr === 'F') bgColor = 'bg-pink-50 border-dashed border-pink-300';
-                else if (isLocked) bgColor = 'bg-white border-red-200';
+        if (this.state === 'PLAY' || this.state === 'BONUS') {
+            this.timeLeft -= dt;
+            if (this.timeLeft <= 0) {
+                this.timeLeft = 0;
+                this.endGame();
+                return;
+            }
+            if (this.score.p1 >= 10 || this.score.p2 >= 10) {
+                this.endGame();
+                return;
+            }
+        }
 
-                let animStyle = '';
-                if (state.isShuffling) {
-                    animStyle = `transform: translate(${(Math.random()-0.5)*40}px, ${(Math.random()-0.5)*40}px) rotate(${(Math.random()-0.5)*20}deg); transition: transform 0.2s;`;
-                } else if (state.animatingSwap) {
-                    if (state.animatingSwap.from === i) {
-                        animStyle = `transform: translate(${state.animatingSwap.dx}px, ${state.animatingSwap.dy}px); z-index: 100; transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);`;
-                    } else if (state.animatingSwap.to === i) {
-                        animStyle = `transform: translate(${-state.animatingSwap.dx}px, ${-state.animatingSwap.dy}px); z-index: 100; transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);`;
+        if (this.state === 'BONUS') return;
+        if (this.state !== 'PLAY') return;
+
+        // --- PLAY中の物理演算 ---
+        this.paddles.forEach(p => {
+            const ease = 0.15;
+            p.x += (p.targetX - p.x) * ease;
+            p.y += (p.targetY - p.y) * ease;
+            p.angle += 0.005;
+
+            p.satellites.forEach(sat => {
+                const theta = p.angle + sat.offsetAngle;
+                sat.x = p.x + Math.cos(theta) * p.orbitRadius;
+                sat.y = p.y + Math.sin(theta) * p.orbitRadius;
+                sat.radius = 28;
+            });
+        });
+
+        this.puck.x += this.puck.vx;
+        this.puck.y += this.puck.vy;
+
+        let wallHit = false;
+        if (this.puck.y - this.puck.radius < 0) {
+            this.puck.y = this.puck.radius;
+            this.puck.vy *= -1;
+            wallHit = true;
+        } else if (this.puck.y + this.puck.radius > this.height) {
+            this.puck.y = this.height - this.puck.radius;
+            this.puck.vy *= -1;
+            wallHit = true;
+        }
+        
+        const goalTop = (this.height - this.goalSize) / 2;
+        const goalBottom = (this.height + this.goalSize) / 2;
+
+        if (this.puck.x - this.puck.radius < 0) {
+            if (this.puck.y > goalTop && this.puck.y < goalBottom) {
+                if (this.puck.x < -40) {
+                    this.score.p2++;
+                    playSound('goal');
+                    this.setupBonusRound();
+                }
+            } else {
+                this.puck.x = this.puck.radius;
+                this.puck.vx *= -1;
+                wallHit = true;
+            }
+        }
+        if (this.puck.x + this.puck.radius > this.width) {
+            if (this.puck.y > goalTop && this.puck.y < goalBottom) {
+                if (this.puck.x > this.width + 40) {
+                    this.score.p1++;
+                    playSound('goal');
+                    this.setupBonusRound();
+                }
+            } else {
+                this.puck.x = this.width - this.puck.radius;
+                this.puck.vx *= -1;
+                wallHit = true;
+            }
+        }
+
+        if (wallHit) playSound('wall');
+
+        this.paddles.forEach(p => {
+            p.satellites.forEach(sat => {
+                const dx = this.puck.x - sat.x;
+                const dy = this.puck.y - sat.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const minDist = this.puck.radius + sat.radius;
+
+                if (dist < minDist) {
+                    if (sat.isCorrect) {
+                        playSound('correct');
+                        this.rallyCount++;
+                        let speedMultiplier = 1.0;
+                        if (this.rallyCount > 0 && this.rallyCount % 2 === 0) {
+                            speedMultiplier = 1.1;
+                            playSound('speedup');
+                        }
+
+                        const angle = Math.atan2(dy, dx);
+                        const push = minDist - dist + 2;
+                        this.puck.x += Math.cos(angle) * push;
+                        this.puck.y += Math.sin(angle) * push;
+
+                        const currentSpeed = Math.sqrt(this.puck.vx**2 + this.puck.vy**2);
+                        const bounceSpeed = Math.max(currentSpeed * 1.05 * speedMultiplier, 5); 
+                        
+                        this.puck.vx = Math.cos(angle) * bounceSpeed;
+                        this.puck.vy = Math.sin(angle) * bounceSpeed;
+
+                        this.puck.flashTimer = 10;
                     }
                 }
-
-                cellsHtml += `
-                <div data-seat-index="${i}" onclick="handleSeatClick(${i})" class="seat-cell rounded border flex flex-col items-center justify-center relative ${bgColor} ${ring} overflow-hidden cursor-pointer hover:shadow-inner transition-shadow" style="width: 120px; height: 60px; ${animStyle}">
-                    ${student ? `<span class="text-[12px] font-bold text-gray-400 absolute top-0.5 left-1">${student.number}</span><div class="student-name text-[13px] font-bold text-gray-800 line-clamp-2 text-center px-1">${student.name}</div>` : `<span class="text-gray-300 font-bold text-xs">${attr==='EMPTY'?'×':getVisualSeatNumber(i)}</span>`}
-                    <div class="absolute top-0.5 right-1">${!student && isLocked ? '<i data-lucide="lock" class="w-2 h-2 text-red-400"></i>' : ''}</div>
-                </div>`;
             });
+        });
 
-            const gridHtml = `<div class="seat-grid grid gap-1 p-2 bg-white rounded-lg shadow-inner" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${cellsHtml}</div>`;
+        if(this.puck.flashTimer > 0) this.puck.flashTimer--;
+    }
 
-            container.innerHTML = `
-                ${header}
-                <div class="flex flex-1 overflow-hidden">
-                    ${sidebar}
-                    <main class="flex-1 overflow-auto flex flex-col items-center p-4 pt-0 bg-gray-100 no-scrollbar pb-[100px]">
-                        <div id="capture-container" class="flex flex-col items-center justify-center bg-gray-100 p-2 rounded-xl">
-                            ${state.blackboardPosition === 'top' ? renderBlackboard('top') + gridHtml : gridHtml + renderBlackboard('bottom')}
-                        </div>
-                    </main>
-                </div>`;
+    draw() {
+        this.ctx.fillStyle = COLORS.bg;
+        this.ctx.fillRect(0, 0, this.width, this.height);
+        this.drawCourt();
+
+        if (this.state === 'BONUS') {
+            this.drawBonusScreen();
+        } else {
+            this.paddles.forEach(p => this.drawPaddle(p));
+            this.drawPuck();
         }
 
-        function renderStudent(container) {
-            const displayIndices = Array.from({ length: state.seats.length }, (_, i) => i);
-            if (state.blackboardPosition === 'bottom') displayIndices.reverse();
+        this.drawUI();
+    }
 
-            const controlsVisible = state.isStudentControlsVisible ? '' : 'hidden';
-            const controls = `
-                <div class="${controlsVisible} fixed bottom-4 left-0 right-0 flex justify-center items-center z-50 transition-all">
-                    <div class="bg-black/70 backdrop-blur-md p-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-white/20">
-                        <button onclick="setMode('teacher')" class="px-4 py-2 bg-white/10 text-white rounded-xl font-bold text-sm">設定モード</button>
-                        <button onclick="toggleBlackboard()" class="px-4 py-2 bg-white/10 text-white rounded-xl font-bold text-sm">黒板↑↓</button>
-                        <button onclick="toggleSound()" class="p-2 bg-white/10 text-white rounded-full"><i data-lucide="${state.isSoundEnabled?'volume-2':'volume-x'}"></i></button>
-                        <div class="w-px h-8 bg-white/20 mx-2"></div>
-                        <button onclick="shuffleSeatsWithAnimation()" ${state.isShuffling?'disabled':''} class="bg-indigo-500 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 text-sm transition-transform active:scale-95 shadow-lg"><i data-lucide="shuffle" class="w-4 h-4"></i> 席替え</button>
-                        <button onclick="drumRollReveal()" ${state.isShuffling?'disabled':''} class="bg-yellow-500 text-black px-6 py-2 rounded-xl font-bold text-sm transition-transform active:scale-95 shadow-lg">順番に公開</button>
-                        <button onclick="revealAll()" ${state.isShuffling?'disabled':''} class="bg-green-500 text-white px-8 py-2 rounded-xl font-bold text-sm transition-transform active:scale-95 shadow-lg">一斉</button>
-                        <button onclick="toggleControls(false)" class="p-2 bg-white/10 text-white rounded-full hover:bg-white/20"><i data-lucide="x"></i></button>
-                    </div>
-                </div>
-                ${!state.isStudentControlsVisible ? `<button onclick="toggleControls(true)" class="fixed bottom-6 right-6 bg-indigo-500 text-white p-4 rounded-full shadow-2xl z-50 animate-bounce"><i data-lucide="chevron-up"></i></button>` : ''}`;
+    drawBonusScreen() {
+        this.ctx.fillStyle = COLORS.bonusBg;
+        this.ctx.fillRect(0, 0, this.width, this.height);
 
-            let cellsHtml = '';
-            displayIndices.forEach(i => {
-                const sId = state.seats[i], student = getStudent(sId), isRev = state.revealState[i], attr = state.seatAttributes[i];
-                if (!student && (attr === 'EMPTY' || !sId)) { cellsHtml += `<div class="rounded border border-white/5 bg-black/10 flex items-center justify-center opacity-30" style="width: 120px; height: 60px;">×</div>`; return; }
-                let anim = state.isShuffling ? `transform: translate(${(Math.random()-0.5)*400}px, ${(Math.random()-0.5)*400}px) rotate(${(Math.random()-0.5)*360}deg); opacity: 0.5;` : '';
-                cellsHtml += `
-                <div onclick="studentToggleCard(${i})" class="perspective-1000 cursor-pointer" style="width: 120px; height: 60px; ${anim}">
-                    <div class="relative w-full h-full transform-style-3d transition-transform duration-500 ${isRev?'rotate-y-180':''}" style="transform: ${isRev?'rotateY(180deg)':'rotateY(0deg)'};">
-                        <div class="absolute inset-0 backface-hidden bg-[#f3efe4] rounded-lg shadow-md border-b-4 border-r-4 border-gray-300 flex flex-col items-center justify-center text-gray-400">
-                            <span class="text-[10px] font-bold">NO.</span><span class="text-xl font-bold">${student?.number || getVisualSeatNumber(i)}</span>
-                        </div>
-                        <div class="absolute inset-0 backface-hidden rotate-y-180 rounded-lg shadow-md border-b-4 border-r-4 ${student?.gender==='M'?'bg-blue-100':'bg-pink-100'} flex items-center justify-center text-gray-800" style="transform: rotateY(180deg); backface-visibility: hidden;">
-                            ${student ? `<span class="absolute top-1 left-2 text-[10px] font-bold opacity-30">${student.number}</span><div class="text-[13px] font-bold text-center px-1 leading-tight">${student.name}</div>` : ''}
-                        </div>
-                    </div>
-                </div>`;
-            });
+        this.ctx.textAlign = "center";
+        this.ctx.textBaseline = "middle";
+        
+        // Bonus! Title (上部)
+        this.ctx.font = "bold italic 40px Arial";
+        this.ctx.fillStyle = "#ffcc00";
+        this.ctx.fillText("BONUS CHANCE!", this.width/2, 80);
 
-            const gridHtml = `<div class="seat-grid grid gap-2 p-4 justify-center content-start flex-shrink-0" style="grid-template-columns: repeat(${state.cols}, 120px); grid-template-rows: repeat(${state.rows}, 60px);">${cellsHtml}</div>`;
+        // 英単語 (中央少し上)
+        this.ctx.font = "bold 60px Arial";
+        this.ctx.fillStyle = "#00d2ff";
+        this.ctx.fillText(this.currentWord.en, this.width/2, this.height/2 - 50);
 
-            container.innerHTML = `
-                <div class="fixed inset-0 bg-[#2b3a42] flex flex-col items-center overflow-hidden font-sans p-4">
-                    <div class="absolute inset-0 opacity-5" style="background-image: radial-gradient(circle, #ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
-                    <div class="flex-1 w-full flex flex-col items-center justify-start z-10 overflow-y-auto no-scrollbar pb-[120px]">
-                        ${state.blackboardPosition === 'top' ? renderBlackboard('top') + gridHtml : gridHtml + renderBlackboard('bottom')}
-                    </div>
-                    ${controls}
-                </div>`;
+        // 結果表示 (最上部で被らないように)
+        if (this.bonusWinner) {
+            this.ctx.font = "bold 50px Arial";
+            this.ctx.fillStyle = this.bonusWinner === 'p1' ? COLORS.p1 : COLORS.p2;
+            const text = this.bonusWinner === 'p1' ? "BLUE GETS +1 !" : "RED GETS +1 !";
+            // タイトルのさらに上、またはタイトルの下に配置
+            this.ctx.fillText(text, this.width/2, 140);
         }
 
-        function renderModal() {
-            const content = document.getElementById('modal-content');
-            if (!content || state.editingSeatIndex === null) return;
-            const i = state.editingSeatIndex, attr = state.seatAttributes[i];
-            const placed = new Set(state.seats.filter(id => id !== null && id !== state.seats[i]));
-            const filtered = state.students.filter(s => !placed.has(s.id) && (s.name || '').includes(state.searchQuery));
-            let listHtml = filtered.map(s => `
-                <button onclick="editSeat('SET_STUDENT', '${s.id}')" class="w-full p-3 text-left flex justify-between items-center hover:bg-indigo-50 border-b text-sm transition-colors">
-                    <div class="flex items-center gap-3"><span class="text-gray-400 w-6 font-mono">${s.number}</span><span class="font-bold text-gray-700">${s.name}</span></div>
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold ${s.gender==='M'?'bg-blue-100 text-blue-600':'bg-pink-100 text-pink-600'}">${s.gender==='M'?'男':'女'}</span>
-                </button>`).join('');
-            content.innerHTML = `<div class="p-4 border-b bg-gray-50 flex justify-between items-center font-bold font-sans text-gray-700">座席 No.${getVisualSeatNumber(i)} の設定<button onclick="closeModal()" class="p-1 hover:bg-gray-200 rounded-full transition-colors"><i data-lucide="x"></i></button></div>
-                <div class="p-4 space-y-4 overflow-y-auto no-scrollbar">
-                    <div class="grid grid-cols-2 gap-2"><button onclick="editSeat('SET_ATTRIBUTE', 'EMPTY')" class="p-3 border rounded-xl text-xs font-bold transition-all ${attr==='EMPTY'?'bg-gray-800 text-white border-gray-800':'bg-white hover:bg-gray-50'}">空席にする</button><button onclick="editSeat('SET_ATTRIBUTE', null)" class="p-3 border rounded-xl text-xs font-bold transition-all ${!attr && !state.lockedSeats[i]?'bg-indigo-600 text-white border-indigo-600':'bg-white hover:bg-gray-50'}">指定なし</button></div>
-                    <div class="relative"><i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i><input type="text" placeholder="名前検索..." class="w-full pl-10 pr-3 py-3 border rounded-xl text-sm focus:ring-1 focus:ring-indigo-300 outline-none" value="${state.searchQuery}" oninput="updateSearchQuery(this.value)"></div><div class="max-h-60 overflow-y-auto border rounded-xl divide-y no-scrollbar">${listHtml}</div></div>`;
-            lucide.createIcons();
-        }
+        // 選択肢ボタン描画
+        this.bonusOptions.forEach(btn => {
+            const isActive = btn.active && !this.bonusWinner; 
+            
+            this.ctx.beginPath();
+            this.ctx.roundRect(btn.x, btn.y, btn.w, btn.h, 10);
+            
+            if (this.bonusWinner) {
+                 if (btn.isCorrect) this.ctx.fillStyle = "#00aa00";
+                 else this.ctx.fillStyle = "#333";
+            } else {
+                if (isActive) {
+                     this.ctx.strokeStyle = btn.player === 'p1' ? COLORS.p1 : COLORS.p2;
+                     this.ctx.lineWidth = 3;
+                     this.ctx.fillStyle = "#222";
+                     this.ctx.stroke();
+                } else {
+                    this.ctx.fillStyle = "#111"; 
+                }
+            }
+            this.ctx.fill();
 
-        window.onload = () => { 
-            loadFromLocalStorage(); 
-            parseStudents(state.importText); 
-            initSeats(); 
-        };
-    </script>
+            this.ctx.fillStyle = isActive || (this.bonusWinner && btn.isCorrect) ? "#fff" : "#555";
+            this.ctx.font = "bold 18px Arial";
+            this.ctx.fillText(btn.text, btn.x + btn.w/2, btn.y + btn.h/2);
+        });
+    }
+
+    drawUI() {
+        // スコア表示
+        this.ctx.font = "bold 60px Arial";
+        this.ctx.textAlign = "center";
+        this.ctx.textBaseline = "top";
+        
+        this.ctx.fillStyle = COLORS.p1;
+        this.ctx.fillText(this.score.p1, this.width / 2 - 120, 20);
+        
+        this.ctx.fillStyle = COLORS.p2;
+        this.ctx.fillText(this.score.p2, this.width / 2 + 120, 20);
+
+        this.ctx.fillStyle = "#555";
+        this.ctx.fillText("-", this.width / 2, 20);
+
+        // タイマー表示
+        const seconds = Math.ceil(this.timeLeft);
+        this.ctx.font = "bold 40px Arial";
+        this.ctx.fillStyle = seconds <= 10 ? "#ff3333" : "#fff";
+        this.ctx.textBaseline = "bottom";
+        this.ctx.fillText(`TIME: ${seconds}`, this.width / 2, this.height - 20);
+    }
+
+    drawCourt() {
+        this.ctx.strokeStyle = COLORS.lines;
+        this.ctx.lineWidth = 4;
+        this.ctx.beginPath();
+        this.ctx.moveTo(this.width / 2, 0);
+        this.ctx.lineTo(this.width / 2, this.height);
+        this.ctx.stroke();
+
+        this.ctx.beginPath();
+        this.ctx.arc(this.width / 2, this.height / 2, 100, 0, Math.PI * 2);
+        this.ctx.stroke();
+
+        const gT = (this.height - this.goalSize) / 2;
+        const gB = (this.height + this.goalSize) / 2;
+        this.ctx.lineWidth = 10;
+        
+        this.ctx.strokeStyle = COLORS.p1;
+        this.ctx.shadowBlur = 10; this.ctx.shadowColor = COLORS.p1;
+        this.ctx.beginPath();
+        this.ctx.moveTo(0,0); this.ctx.lineTo(0, gT);
+        this.ctx.moveTo(0, gB); this.ctx.lineTo(0, this.height);
+        this.ctx.stroke();
+
+        this.ctx.strokeStyle = COLORS.p2;
+        this.ctx.shadowBlur = 10; this.ctx.shadowColor = COLORS.p2;
+        this.ctx.beginPath();
+        this.ctx.moveTo(this.width,0); this.ctx.lineTo(this.width, gT);
+        this.ctx.moveTo(this.width, gB); this.ctx.lineTo(this.width, this.height);
+        this.ctx.stroke();
+        
+        this.ctx.shadowBlur = 0;
+    }
+
+    drawPaddle(p) {
+        this.ctx.beginPath();
+        this.ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        this.ctx.fillStyle = "rgba(255,255,255,0.1)"; 
+        this.ctx.strokeStyle = p.color;
+        this.ctx.lineWidth = 2;
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        p.satellites.forEach(sat => {
+            this.ctx.beginPath();
+            this.ctx.arc(sat.x, sat.y, sat.radius, 0, Math.PI * 2);
+            this.ctx.fillStyle = "#333";
+            this.ctx.strokeStyle = p.color;
+            this.ctx.lineWidth = 3;
+            this.ctx.fill();
+            this.ctx.stroke();
+
+            this.ctx.fillStyle = "#fff";
+            this.ctx.font = "bold 14px Arial";
+            this.ctx.textAlign = "center";
+            this.ctx.textBaseline = "middle";
+            this.ctx.fillText(sat.text, sat.x, sat.y);
+        });
+    }
+
+    drawPuck() {
+        this.ctx.beginPath();
+        this.ctx.arc(this.puck.x, this.puck.y, this.puck.radius, 0, Math.PI * 2);
+        
+        if (this.puck.flashTimer > 0) {
+            this.ctx.fillStyle = "#ffff00";
+            this.ctx.shadowBlur = 30;
+            this.ctx.shadowColor = "#ffff00";
+        } else {
+            this.ctx.fillStyle = COLORS.puck;
+            this.ctx.shadowBlur = 0;
+        }
+        
+        this.ctx.fill();
+        this.ctx.shadowBlur = 0;
+
+        this.ctx.fillStyle = "#000";
+        
+        // --- フォントサイズ自動調整 ---
+        const text = this.currentWord.en;
+        let fontSize = 16;
+        if (text.length > 8) fontSize = 14;
+        if (text.length > 12) fontSize = 12;
+        if (text.length > 15) fontSize = 10;
+        
+        this.ctx.font = `bold ${fontSize}px Arial`;
+        // -----------------------------
+        
+        this.ctx.textAlign = "center";
+        this.ctx.textBaseline = "middle";
+        this.ctx.fillText(text, this.puck.x, this.puck.y);
+    }
+
+    loop(timestamp) {
+        if (!this.lastTime) this.lastTime = timestamp;
+        const dt = (timestamp - this.lastTime) / 1000;
+        this.lastTime = timestamp;
+
+        this.update(dt);
+        this.draw();
+        requestAnimationFrame(t => this.loop(t));
+    }
+}
+
+window.onload = () => new Game();
+</script>
+
 </body>
 </html>
