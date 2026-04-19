@@ -311,15 +311,47 @@
             if (!text) return;
             const lines = text.trim().split('\n');
             state.students = lines.map((line, i) => {
+                // カンマまたはタブ区切りで分割し、空白を取り除く
                 const parts = line.split(/[,\t]/).map(p => p.trim()).filter(p => p);
                 let num = i + 1, name = `生徒${i+1}`, gender = 'M';
-                if (parts.length >= 3) {
-                    if (!isNaN(parseInt(parts[0]))) { num = parseInt(parts[0]); name = parts[1]; gender = (parts[2].includes('女') || parts[2].toLowerCase().includes('f')) ? 'F' : 'M'; }
-                    else { name = parts[0]; gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M'; }
-                } else if (parts.length === 2) {
-                    if (!isNaN(parseInt(parts[0]))) { num = parseInt(parts[0]); name = parts[1]; }
-                    else { name = parts[0]; gender = (parts[1].includes('女') || parts[1].toLowerCase().includes('f')) ? 'F' : 'M'; }
-                } else if (parts.length === 1) { name = parts[0]; }
+                
+                if (parts.length > 0) {
+                    // 1. 先頭が番号かどうか（数字に変換可能か）
+                    if (!isNaN(parseInt(parts[0]))) {
+                        num = parseInt(parts[0]);
+                        parts.shift(); // 先頭（番号）を取り除く
+                    }
+                    
+                    // 2. 末尾が性別かどうか
+                    if (parts.length > 0) {
+                        const last = parts[parts.length - 1].toLowerCase();
+                        // 厳密な判定（'女', '女子', 'f' などを完全に一致するか）
+                        if (['女', '女子', 'f', 'female'].includes(last)) {
+                            gender = 'F';
+                            parts.pop(); // 末尾（性別）を取り除く
+                        } else if (['男', '男子', 'm', 'male'].includes(last)) {
+                            gender = 'M';
+                            parts.pop(); // 末尾（性別）を取り除く
+                        } 
+                        // 曖昧な判定（要素が2つ以上残っている場合、末尾は性別欄である可能性が高い）
+                        // ※例えば「女の子」などの表記にも対応するため
+                        else if (parts.length >= 2) {
+                            if (last.includes('女') || last.includes('f')) {
+                                gender = 'F';
+                                parts.pop();
+                            } else if (last.includes('男') || last.includes('m')) {
+                                gender = 'M';
+                                parts.pop();
+                            }
+                        }
+                    }
+
+                    // 3. 残ったものを名前とする（姓と名が分かれている場合は半角スペースで繋ぐ）
+                    if (parts.length > 0) {
+                        name = parts.join(' ');
+                    }
+                }
+                
                 return { id: `s-${i}`, number: num, name, gender };
             });
         }
